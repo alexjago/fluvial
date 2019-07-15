@@ -11,7 +11,7 @@ Requires [`xsv`](https://github.com/BurntSushi/xsv), so that timely CSV manipula
 
 ## Usage
 
-First set up the virtual environment for the dependencies and activate it. 
+First set up the virtual environment for the dependencies and activate it.
 
 At this point you can run `$ python3 fluvial.py -h` for the built-in help.
 
@@ -38,13 +38,13 @@ https://data.qld.gov.au/dataset/general-transit-feed-specification-gtfs-seq
 
 **Caveat: the patronage data is often up to a year behind whereas the GTFS data is always current. Luckily routes don't change often.**
 
-If your origin-destination data CSV has columns for what GTFS calls `stop_id` (as TransLinkSEQ's does) then if they also release GTFS data you can most likely connect the two to automatically infer the order of stops along each route.
+If your origin-destination data CSV has columns for what GTFS calls `stop_id` (as TransLinkSEQ's does) then if you also have relevant GTFS data you can most likely connect the two to automatically infer the order of stops along each route.
 
-Otherwise, you will need to manually produce a positions file for each route you'd like to visualise, listing what GTFS would call `stop_id`, `stop_name` and `stop_sequence` (and under those headers).
+Otherwise, you will need to manually produce a *positions file* for each route you'd like to visualise, listing what GTFS would call `stop_id`, `stop_name` and `stop_sequence` (and under those headers).
 
 If you somehow don't do either then Fluvial will output stop orders from the order in which they are read from the file.
 
-Fluvial generates a few intermediary files for caching purposes. You should set `gtfs_cache` in the definitions file
+Fluvial generates a few intermediary files for caching purposes. You may need to set `gtfs_cache` in the definitions file to be something other than a subdirectory of `gtfs_dir`.
 
 ## Getting set up: Virtual Environments and Pip howto
 
@@ -70,6 +70,8 @@ Deactivate when done: `deactivate`
 See here to get started: https://docs.python.org/3/library/venv.html
 
 (Also covers non-Windows systems, of course)
+
+And then run `pip3 install -r requirements.txt` once you have the virtual environment activated.
 
 ### If you like to live fast
 
