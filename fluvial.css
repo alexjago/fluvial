@@ -1,0 +1,30 @@
+/* Simple styling for Fluvial SVG output */
+
+
+/* for a solid background */
+#bgrect {fill:white; stroke:white}
+
+/* General text settings */
+text {font-family: "Source Sans Pro", sans-serif; font-size: 1.3em;}
+
+/* .arc defines the connection lines. They will also be coloured 
+	programmatically by adding colour classes to the stylesheet. */
+.arc {opacity:0.7; fill:none;}
+
+/* The bargraphs at the bottom are defined as lines */
+.bargraph {opacity: 0.3; stroke:black; stroke-linecap: butt}
+
+/* The text elements are done as overlapped pairs to provide for a keyline.
+	Apply no stroke to the foreground, and ensure that they're the same
+	text size, fonts, etc so they stay aligned. */
+.foreground, .keyline {fill: black; font-family: "Source Sans Pro Semibold";}
+.keyline {stroke:white; stroke-width:0.5em; stroke-linejoin:round; opacity:0.6;}
+.bartxt {font-style: italic; fill:black}
+
+
+/* Draws a line across the middle */
+#mainline {stroke:grey; fill:none; opacity:1; stroke-width:0.6em}
+.markers {fill:white; stroke: grey; stroke-width:0.3em; opacity:1}
+
+/* Adds title styling */
+.title {font-size: 4em; font-weight: bold}
