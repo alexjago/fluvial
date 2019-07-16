@@ -382,7 +382,7 @@ def process(opts, routename, routedirection):
     # ^^^ put it back the way we found it
 
     if len(total_ogs) == 0:
-        printv(routename, "ended up empty.")
+        print("\033[F"+routename, routedirection, "skipped; no valid stops.")
         return
 
     if opts['gtfs_dir'] or opts['positions_file']:
