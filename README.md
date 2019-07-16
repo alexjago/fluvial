@@ -79,5 +79,4 @@ Go `pip3 install --user -r requirements.txt` and install the dependedencies outs
 
 ## Features on the to-do list
 
-- Mouseover support. If SVG paths supported alt-text this would be very simple, but they don't.
 - Better `stop_sequence` aggreggation. Many routes have e.g. school-pickup variations, and some are loops with varying points of service commencement around the loop. The current 'averaging' aggregation can lead to incorrect diagrams. A better approach would be some sort of graph construction.
