@@ -488,13 +488,13 @@ def process(opts, routename, routedirection):
             subtotal_og = 0
             for j in range(i+1, len(positions)): # start at i+1 - the next stop along
                 dest = positions[j]
-                #dest_name = stop_names.get(orig, f"Stop ID {dest}")
+                dest_name = stop_names.get(dest, dest)
                 if (not dest in tree[orig]):
                     #printv(dest, f"not in tree[{orig}]")
                     pass
                 else:
                     qty = tree[orig][dest]
-                    #alt_txt = f"{orig_name} to {dest_name}: {qty}" # at least label with str(qty)
+                    alt_txt = f"from: {orig_name}\nto: {dest_name}\npassengers: {qty}" # at least label with str(qty)
                     destpos = positions.index(dest)
                     width = space * qty / tots_max
                     x1 = round( (left_extra + i*between) + (total - (subtotal_og + width/2)) + space/50       , 5)
@@ -505,6 +505,7 @@ def process(opts, routename, routedirection):
                     path = dwg.path(d=draw, stroke_width=round(width,5), class_=f"arc f{i} t{destpos}")
                     #                       ^^^ stroke=c_list[i], fill="none" now in stylesheet.
                     # Note the 'from' and 'to' info tucked away in the path classes. Could use this e.g. on hover
+                    path.set_desc(title=alt_txt)
                     dwg.add(path)
 
                     subtotal_og += width
