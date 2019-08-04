@@ -37,7 +37,8 @@ import configparser
 import tempfile
 
 
-__VERBOSE = True # nasty globals, we hates it, we hates it
+__VERBOSE = False # nasty globals, we hates it, we hates it
+__VERSION = "0.2"
 
 # Let's generate some colours!
 # (this is the only thing we need hsluv for)
@@ -580,6 +581,7 @@ if __name__ == "__main__":
 
     # Set up argument parser
     parser = argparse.ArgumentParser(description="Make line-flow diagrams from origin-destination patronage data, interpreting GTFS for metadata. Requires xsv.", epilog="Why 'fluvial? Because transit is like a river. xsv can be found at https://github.com/BurntSushi/xsv")
+    parser.add_argument('--version', action='version', version=__VERSION)
     p_v = parser.add_mutually_exclusive_group()
     p_v.add_argument('-v', '--verbose', action="store_true", help="I want to know more")
     p_v.add_argument('--quiet', action="store_true", dest="no_verbose", help="Override definitions file.")
