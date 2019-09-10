@@ -28,4 +28,5 @@ text {font-family: "Source Sans Pro", sans-serif; font-size: 1.3em;}
 .markers {fill:white; stroke: grey; stroke-width:0.3em; opacity:1}
 
 /* Adds title styling */
-.title {font-size: 4em; font-weight: bold}
+.title {font-size: 2vw; font-weight: bold}
+.subtitle {font-size: 1vw; font-weight: bold}

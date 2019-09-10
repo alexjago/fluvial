@@ -38,7 +38,7 @@ import tempfile
 
 
 __VERBOSE = False # nasty globals, we hates it, we hates it
-__VERSION = "0.2"
+__VERSION = "0.2.1"
 
 # Let's generate some colours!
 # (this is the only thing we need hsluv for)
@@ -408,8 +408,9 @@ def process(opts, routename, routedirection):
     printv(f"row_count {row_count}")
     tots_max_og = max([v for k,v in total_ogs.items()])
     tots_max_ds = max([v for k,v in total_dests.items()])
+    tots_sum_og = sum([v for k,v in total_ogs.items()])
 
-    printv(f"qt_max {qt_max},  tier_max {tier_max},  tots_max {tots_max}")
+    printv(f"qt_max {qt_max},  tier_max {tier_max},  tots_max {tots_max},   tots_sum_og {tots_sum_og}")
 
 
     space = 50 # spacing baseblock. In... pixels, probably
@@ -418,11 +419,12 @@ def process(opts, routename, routedirection):
     text_section = 11*space # below (named for the labels)
     left_extra = 2*space
     right_extra = 2*space
+    top_extra = space
     main_height = (tier_max + 2)*0.5*between
     main_width = (len(positions)-1)*between
 
     docwidth = (left_extra + main_width + right_extra)
-    docheight = (text_section + main_height)
+    docheight = (text_section + main_height + top_extra)
 
     dwg = svgwrite.Drawing(os.path.join(opts['outdir'], f"{routename}_{routedirection}.svg"), size=(docwidth, docheight))
 
@@ -449,7 +451,8 @@ def process(opts, routename, routedirection):
                     .bartxt {font-style: italic}
                     #mainline {stroke:black; fill:none}
                     .markers {fill:black; opacity:1}
-                    .title {font-size: 4em; font-weight: bold}
+                    .title {font-size: 2vw; font-weight: bold}
+                    .subtitle {font-size: 1vw; font-weight: bold}
                  """
     # And now the arc colours proper
     c_list = colour_list(len(positions), chroma_var=0, lightness_var=10)
@@ -499,7 +502,7 @@ def process(opts, routename, routedirection):
                     destpos = positions.index(dest)
                     width = space * qty / tots_max
                     x1 = round( (left_extra + i*between) + (total - (subtotal_og + width/2)) + space/50       , 5)
-                    y1 = main_height
+                    y1 = main_height + top_extra
                     x2 = round( (left_extra + destpos*between) + -(width/2 + subtotal_dests[dest]) + -space/50  , 5)
                     y2 = y1
                     draw = "m{} {} {} {} A1 1 0 1 1 {} {} v{}".format(x1, docheight, 0, -text_section, x2, y2, text_section)
@@ -529,7 +532,7 @@ def process(opts, routename, routedirection):
         # once that's done, time for path/stop labels
         # The easiest way to get a keyline is just to do everything twice.
         t_x = left_extra+(i*between) - space/8
-        t_y = main_height+space/2
+        t_y = top_extra+main_height+space/2
 
         line2 = "{} alightings | {} boardings".format(total_dests.get(orig, 0), total_ogs.get(orig, 0))
         textbasebg = dwg.text(orig_name, (t_x, t_y), text_anchor="end", transform="rotate(270,{},{})".format(t_x, t_y),
@@ -552,12 +555,12 @@ def process(opts, routename, routedirection):
     #dwg.defs.add(marker)
 
     # Now create the main line
-    line = dwg.add(dwg.polyline(points=[(left_extra+(i*between), main_height) for i in range(len(positions))], id_="mainline"))
+    line = dwg.add(dwg.polyline(points=[(left_extra+(i*between), top_extra+main_height) for i in range(len(positions))], id_="mainline"))
     #line['marker'] = marker.get_funciri()
 
     # since markers aren't working for us, we'll have to go DIY...
     for i in range(len(positions)):
-        dwg.add(dwg.circle((left_extra+(i*between), main_height), r=space/4, class_="markers"))
+        dwg.add(dwg.circle((left_extra+(i*between), top_extra+main_height), r=space/4, class_="markers"))
 
 
     # add a title if desired
@@ -570,7 +573,10 @@ def process(opts, routename, routedirection):
         pass # this isn't really critical
 
     title_text = f"{routename} {routedirection} – {t_month} {t_year}"
-    dwg.add(dwg.text(title_text, (docwidth/2, space*2), class_="title", text_anchor="middle"))
+    dwg.add(dwg.text(title_text, (docwidth/2, space*1.5), class_="title", text_anchor="middle"))
+    boardings_text = f"Total boardings: {tots_sum_og}"
+    dwg.add(dwg.text(boardings_text, (docwidth/2, space*2.5), class_="subtitle", text_anchor="middle"))
+
 
     # and save!
     dwg.save()
