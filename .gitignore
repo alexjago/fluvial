@@ -3,3 +3,8 @@ env
 envdir
 my_definitions.ini
 fluvial_output
+
+
+# Added by cargo
+
+/target
