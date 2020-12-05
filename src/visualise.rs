@@ -389,15 +389,15 @@ pub fn visualise_one(
     let boards_count: i32 = boardings.values().sum();
     let title = format!(
         r#"<text class="title" x="{}" y="100">{} {} – {} {}</text>
-    <text class="subtitle" x="{}" y="150">{} services</text>"#, // {} boardings TODO
+    <text class="subtitle" x="{}" y="150">{} boardings</text>"#, // {} services TODO
         doc_width / 2.0,
         route_name,
         direction,
         month,
         year,
         doc_width / 2.0,
-        //boards_count,
-        service_count
+        boards_count,
+        //service_count
     );
 
     // need to write instead of print, eventually
