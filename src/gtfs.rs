@@ -1,10 +1,11 @@
-use rusqlite::{params, Connection, Result, NO_PARAMS};
-use std::collections::{BTreeMap, HashSet, VecDeque};
-use std::iter::{FilterMap, Iterator};
-use std::path::PathBuf;
+//! Functions for dealing with GTFS...
 
-use std::process::exit;
+use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::iter::Iterator;
+use std::path::PathBuf;
 use std::time::Instant;
+
+use rusqlite::{Connection, Result, NO_PARAMS};
 
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
@@ -117,6 +118,7 @@ pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Erro
 }
 
 fn get_gtfs_routelist(db: &Connection) -> Result<Vec<String>, rusqlite::Error> {
+    //! Get all the routes that *GTFS* knows about
     let mut stmt = db
         .prepare("SELECT route_short_name FROM Routes")
         .expect("Failed preparing statement");
@@ -134,23 +136,22 @@ fn get_gtfs_stop_seqs(
     direction: &str,
 ) -> Result<Vec<StopSeq>, serde_rusqlite::Error> {
     //! Get the StopSeqs for all services of the given route/direction.
-    //! Frustratingly, TransLink uses the same route_id for different route variations
-    //! so if we don't use the raw data out of StopTimes then we only have the counts for disambiguation.
-    //! In practice, qty collisions seem rare.
-    //! **However...** the `shape_id`s are also distinct per-variation.
+    //! Route variations are distinguishable by `shape_id`.
 
-    let schema = format!(
+    // Frustrating that we have to use shape_id rather than route_id...
+
+    let mut stmt = db.prepare(
         "SELECT stop_id, stop_sequence, shape_id, qty
-        FROM StopSeqs WHERE route_short_name IS {} AND direction_id IS {}
+        FROM StopSeqs WHERE route_short_name IS :route AND direction_id IS :direction
         ORDER BY shape_id, stop_sequence;",
-        route, direction
-    );
+    )?;
 
-    let mut stmt = db.prepare(&schema).unwrap();
-    let out = from_rows::<StopSeq>(stmt.query(NO_PARAMS)?).collect();
+    let out = from_rows::<StopSeq>(
+        stmt.query_named(&[(":route", &route), (":direction", &direction)])?,
+    )
+    .collect();
     out
 }
-
 
 fn get_prev_last(
     db: &Connection,
@@ -190,23 +191,7 @@ pub fn make_stop_sequence(
     route: &str,
     direction_name: &str,
 ) -> Result<Vec<i64>, serde_rusqlite::Error> {
-    //! Turns `get_gtfs_stop_seqs`' output into what we really want: an ordered list of stops
-    //! ready for display
-
-    /* Walking the stop sequences
-     * start at the sources [sequence = 1]
-     * go through until hit a multinode
-     * start from next source
-     * then at that multinode, all of the non-multinode nexts are new sources
-     * repeat
-     * that's probably almost a toposort but it doesn't entirely solve the loop problem
-     * oracle something to be the last stop
-     */
-
-    // Longest-common-subsequence has also been recommended
-
-    // but for now, what will suffice is to oracle something to be the last stop,
-    // cut the loop there, and then do a toposort via DFW
+    //! Creates a route-ordered list of `stop_id`s for a given route/direction.
 
     let direction = convert_direction(direction_name);
 
@@ -214,7 +199,7 @@ pub fn make_stop_sequence(
         Ok(o) => o,
         Err(e) => return Err(e),
     };
-//     eprintln!("Executed GTFS query OK! {} rows returned...", rows.len());
+    //     eprintln!("Executed GTFS query OK! {} rows returned...", rows.len());
 
     if rows.len() == 0 {
         return Err(serde_rusqlite::Error::Rusqlite(
@@ -223,79 +208,62 @@ pub fn make_stop_sequence(
     }
 
     /* Oracling like a boss
-     * Pragma: only stops that a run starts on should be a start stop
+     * Pragma: only stops that a run starts on should be a "start stop"
      * and any stops that have no prior stops in the graph beat all others
      * if there's a cycle that contains *every* stop, then the stop with the
      * plurality of starts should be selected
      * tiebreak by boardings, then stop_id
      */
 
-    let mut oracle_firsts: BTreeMap<i64, i64> = BTreeMap::new();
+    let mut firsts: BTreeMap<i64, i64> = BTreeMap::new();
     let mut not_only_firsts: HashSet<i64> = HashSet::new();
     let mut shape_stops: BTreeMap<&str, i64> = BTreeMap::new();
 
-//     println!("ID\tSeq.\tShape\tQty");
-
-    struct StopItem {
-        stop_sequence: i64,
-        shape_id: String,
-        qty: i64,
-    }
-
-    //     let mut stop_items: BTreeMap<(i64, StopItem)>  = BTreeMap::new();
+    //     println!("ID\tSeq.\tShape\tQty");
 
     for r in rows.iter() {
-//         println!(
-//             "{}\t{}\t{}\t{}",
-//             r.stop_id, r.stop_sequence, r.shape_id, r.qty
-//         );
+        //         println!(
+        //             "{}\t{}\t{}\t{}",
+        //             r.stop_id, r.stop_sequence, r.shape_id, r.qty
+        //         );
 
-        if (r.stop_sequence < 2) {
-            let c: i64 = *oracle_firsts.get(&r.stop_id).unwrap_or(&0);
-            oracle_firsts.insert(r.stop_id, r.qty + c);
+        if r.stop_sequence < 2 {
+            let c: i64 = *firsts.get(&r.stop_id).unwrap_or(&0);
+            firsts.insert(r.stop_id, r.qty + c);
             shape_stops.insert(&r.shape_id, r.stop_id);
         } else {
             not_only_firsts.insert(r.stop_id);
         }
     }
 
-    // we want to select a "pure" first, possibly from one of several
-    // and if one isn't available, than from a not_only_first
-
-    let only_firsts: Vec<i64> = oracle_firsts
-        .keys()
-        .cloned()
-        .filter(|x| !not_only_firsts.contains(x))
-        .collect();
-
-    // life can be messy (or loopy). Sort all firsts by runs and then patronage
-    let mut onlyfirsts: Vec<(i64, i64, i64)> = Vec::new();
-    let mut allfirstslist: Vec<(i64, i64, i64)> = Vec::new();
-    for (id, firsts) in oracle_firsts.iter() {
+    // Ideally we want a "pure" first but they aren't always available.
+    // Sort all firsts by runs and then patronage
+    let mut only_firsts: Vec<(i64, i64, i64)> = Vec::new();
+    let mut all_firsts: Vec<(i64, i64, i64)> = Vec::new();
+    for (id, firsts) in firsts.iter() {
         let patronage = get_boardings(db, route, direction_name, *id).unwrap_or(0);
-        allfirstslist.push((*firsts, patronage, *id));
+        all_firsts.push((*firsts, patronage, *id));
         if !not_only_firsts.contains(id) {
-            onlyfirsts.push((*firsts, patronage, *id));
+            only_firsts.push((*firsts, patronage, *id));
         }
     }
+    all_firsts.sort();
+    all_firsts.reverse();
+    only_firsts.sort();
+    only_firsts.reverse();
 
-    allfirstslist.sort();
-    allfirstslist.reverse();
-    onlyfirsts.sort();
-    onlyfirsts.reverse();
-
-    let oracle_stop_id = match onlyfirsts.len() {
-        0 => allfirstslist.first().unwrap().2,
-        _ => onlyfirsts.first().unwrap().2,
+    let oracle_stop_id = match only_firsts.len() {
+        0 => all_firsts.first().unwrap().2,
+        _ => only_firsts.first().unwrap().2,
     };
 
-//     println!("\n\nStarting stop_id: {:?}", oracle_stop_id);
+    //     println!("\n\nStarting stop_id: {:?}", oracle_stop_id);
 
-    // need to order all the pure firsts (already done, arbitrarily)
-    // and then all the not_only_firsts
-    // extremely cheeky solution: go by physical closeness to last stop
+    // We have a good, but not great, consideration ordering of stop sequences
+    // *Extremely* cheeky solution: go by physical closeness to last stop
 
-    let mut unalloc: HashSet<i64> = allfirstslist
+    // collate as-yet unallocated sequence starts
+    let mut unalloc: HashSet<i64> = all_firsts
         .iter()
         .filter_map(|r| {
             if r.2 != oracle_stop_id {
@@ -305,19 +273,18 @@ pub fn make_stop_sequence(
             }
         })
         .collect();
-    let mut final_order: Vec<i64> = Vec::with_capacity(allfirstslist.len());
+    let mut final_order: Vec<i64> = Vec::with_capacity(all_firsts.len());
     let mut prev_first: i64 = oracle_stop_id;
 
-    for _ in 0..allfirstslist.len() {
+    // physical-closeness iteration
+    for _ in 0..all_firsts.len() {
         final_order.push(prev_first);
 
         let prev_last = get_prev_last(db, route, direction, prev_first).unwrap();
 
         // need lat/long of prev_last
-
         let mut stmt =
             db.prepare("SELECT stop_lat, stop_lon FROM Stops WHERE stop_id = :stop_id;")?;
-
         let prev_coords = stmt.query_row_named(&[(":stop_id", &prev_last)], |r| {
             Ok((r.get_unwrap(0), r.get_unwrap(1)))
         })?;
@@ -328,6 +295,7 @@ pub fn make_stop_sequence(
         let mut min_dist = f64::MAX;
         let mut min_dist_k = prev_first;
 
+        // iterate over as-yet-unallocated sequence starts and select closest
         for k in &unalloc {
             let test_coords = stmt.query_row_named(&[(":stop_id", &k)], |r| {
                 Ok((r.get_unwrap(0), r.get_unwrap(1)))
@@ -344,9 +312,9 @@ pub fn make_stop_sequence(
         unalloc.remove(&min_dist_k);
     }
 
-//     println!("{:?}", final_order);
+    //     println!("{:?}", final_order);
 
-    // now create a deque of deques
+    // now create a deque of deques for topomerging
 
     let mut mainde: VecDeque<VecDeque<i64>> = VecDeque::new();
 
@@ -365,89 +333,82 @@ pub fn make_stop_sequence(
         }
     }
 
-//     println!("mainde: {:?}", mainde);
+    //     println!("mainde: {:?}", mainde);
 
-    Ok(topomerge(mainde))
+    Ok(topo_merge(mainde))
 }
 
-fn topomerge(mut input: VecDeque<VecDeque<i64>>) -> Vec<i64> {
+fn topo_merge(mut input: VecDeque<VecDeque<i64>>) -> Vec<i64> {
     //! Merge a collection of ordered sequences in a toposort-compatible way
 
     //! * input: a collection of sequences of of stop_ids (in stop_sequence order), one per shape_id  
-    //! * output: a single sequence of stop_ids  
-    //! * temp: deque of stop_ids  
+    //! * output: a single, merged sequence of stop_ids  
 
     //! ```
     //! loop over sequences:    
     //!   loop over contents:  
     //!     pop a stop off the front,
     //!     if it's on the front of any others, pop them too (result: merge)
-    //!     if output already contains stop_id, insert the contents of the temp queue
+    //!     if temp queue already contains the stop, append queue contents to output; loop
+    //!     else if output already contains stop_id, insert the contents of the temp queue
     //!     immediately prior to that point in the output (retaining original ordering)
     //!     otherwise push current stop_id on the temp queue
-    //!     if hit the end of the current sequence (and output doesn't already contain
-    //!     current stop_id) then append temp queue to the output (again, retain ordering)
-    //!     (clear temp queue, iterate)
+    //!   at the end of the current sequence, append temp queue to the output
+    //!   clear temp queue, iterate
     //! ```
 
     let mut output: Vec<i64> = Vec::new();
+    // a temporary queue
     let mut temp: VecDeque<i64> = VecDeque::new();
 
     while !input.is_empty() {
         let mut de = input.pop_front().unwrap();
-        //         match de.front() {
-        //             Some(o) => println!("New sequence starting with {}", o),
-        //             None => println!("Uh-oh - empty sequence!")
-        //         };
-
         while !de.is_empty() {
-            if let Some(id) = de.pop_front() {
-                //                 println!("{}", id);
-
-                if temp.contains(&id) {
-                    for t in temp.iter() {
-                        output.push(*t);
-                    }
-                    temp.clear();
-                    continue;
+            let id = de.pop_front().unwrap();
+            // if the temp queue already contains this stop, we have a loop to break
+            // solution: cut and run
+            if temp.contains(&id) {
+                for t in temp.iter() {
+                    output.push(*t);
                 }
-
-                for ode in input.iter_mut() {
-                    if let Some(o) = ode.front() {
-                        if *o == id {
-                            ode.pop_front();
-                        }
+                temp.clear();
+                continue;
+            }
+            // "merge" other sequences in if possible (by popping this stop from them)
+            for ode in input.iter_mut() {
+                if let Some(o) = ode.front() {
+                    if *o == id {
+                        ode.pop_front();
                     }
-                }
-                if let Some(c) = output.iter().position(|s| *s == id) {
-                    let mut cursor = c;
-                    //                     println!("... found duplicate {} at {}", id, c);
-                    for t in temp.iter() {
-                        output.insert(cursor, *t);
-                        cursor = cursor + 1;
-                    }
-                    temp.clear();
-                //                     println!("... drained queue")
-                } else {
-                    temp.push_back(id);
-                    //                     println!("... pushed {}", id);
                 }
             }
+            // if this stop is already in the output, insert temp queue prior to it
+            if let Some(c) = output.iter().position(|s| *s == id) {
+                let mut cursor = c;
+                //                     println!("... found duplicate {} at {}", id, c);
+                for t in temp.iter() {
+                    output.insert(cursor, *t);
+                    cursor = cursor + 1;
+                }
+                temp.clear();
+            } else {
+                // nothing else for it: append this stop to the temp queue
+                temp.push_back(id);
+            }
         }
+        // end of the sequence, append any remaining temp queue to output
         for t in temp.iter() {
             output.push(*t);
         }
         temp.clear();
-        //         println!("drained main queue")
     }
 
     return output;
 }
 
 fn gc_distance(from_lat: f64, from_lon: f64, to_lat: f64, to_lon: f64) -> f64 {
-    //! Calculate the distance between two Coordinates as a
-    //! great-circle distance on the Earth.
-    //! Takes coordinates in decimal degrees for convenience
+    //! Calculate the great-circle distance between two points on Earth.
+    //! Takes coordinates in decimal degrees.
 
     let r = 6371000.0; // approximate average radius of Earth
 
@@ -463,4 +424,41 @@ fn gc_distance(from_lat: f64, from_lon: f64, to_lat: f64, to_lon: f64) -> f64 {
             + from_lat.cos() * to_lat.cos() * (((to_lon - from_lon) / 2.0).sin().powi(2)))
         .sqrt()
         .asin())
+}
+
+pub fn get_stop_names(
+    db: &Connection,
+    input: &Vec<i64>,
+) -> Result<BTreeMap<i64, String>, serde_rusqlite::Error> {
+    //! Get stop names from stop sequences
+    let mut output: BTreeMap<i64, String> = BTreeMap::new();
+
+    let mut stmt = db.prepare_cached("SELECT stop_name FROM Stops WHERE stop_id = :id")?;
+
+    for id in input {
+        let name: String = stmt.query_row_named(&[(":id", &id)], |r| r.get(0))?;
+        output.insert(*id, name);
+    }
+
+    return Ok(output);
+}
+
+pub fn get_service_count(
+    db: &Connection,
+    route: &str,
+    direction_name: &str,
+    _month: &str,
+    _year: &str,
+) -> rusqlite::Result<i32> {
+    let mut stmt = db.prepare("SELECT COUNT(*) FROM StopSeqs WHERE route_short_name = :route AND direction_id = :direction")?;
+
+    let res: i32 = stmt.query_row_named(
+        &[
+            (":route", &route),
+            (":direction", &convert_direction(direction_name)),
+        ],
+        |row| row.get(0),
+    )?;
+
+    Ok(res)
 }

@@ -3,97 +3,54 @@
 //! A bit like a Sankey diagram, only a little simpler.
 //! Intended for visualising passenger flows over a route.
 
+extern crate ansi_escapes;
 extern crate hsluv;
-#[macro_use]
-extern crate clap;
+extern crate structopt;
 
-use clap::{App, Arg, ArgGroup};
-use core::fmt::Display;
-use hsluv::*;
-use rand::Rng;
+use structopt::StructOpt;
 
-use rusqlite::{params, Connection, Result, NO_PARAMS};
-use std::collections::{BTreeMap, HashSet, VecDeque};
-use std::iter::{FilterMap, Iterator};
+use rusqlite::{Connection, Result, NO_PARAMS};
+use std::collections::BTreeMap;
+use std::iter::Iterator;
 use std::path::PathBuf;
 
 use std::process::exit;
-use std::time::Instant;
-
-use serde::{Deserialize, Serialize};
-use serde_rusqlite::*;
 
 mod gtfs;
 use crate::gtfs::*;
 
+mod visualise;
+use crate::visualise::*;
+
 type RouteDir = (String, String);
 
-
-fn colour_list(count: usize) -> Vec<String> {
-    //! Create a vector of hex colour codes, with evenly-spaced hues
-    //! plus a little bit of variance in saturation and lightness.
-    let mut out = Vec::<String>::new();
-    let mut rng = rand::thread_rng();
-    for k in 0..count {
-        let hue = 360.0 * (k as f64) / (count as f64);
-        let sat_var: f64 = rng.gen();
-        let sat = 90.0 + 10.0 * sat_var;
-        let val = match k % 4 {
-            1 => 50.0,
-            3 => 60.0,
-            _ => 55.0,
-        };
-        out.push(hsluv_to_hex((hue, sat, val)));
-    }
-    return out;
-}
-
-fn jumbled<T>(input: Vec<T>) -> Vec<T>
-where
-    T: Clone,
-{
-    //! If `input.len() >= 2`, returns a copy of `input` with its elements permuted in a star pattern.
-    //! Otherwise, returns `input`.
-
-    let L = input.len();
-
-    if L < 2 {
-        return input;
-    } else if L == 4 {
-        return vec![
-            input[1].clone(),
-            input[3].clone(),
-            input[0].clone(),
-            input[2].clone(),
-        ];
-    } else if L == 6 {
-        return vec![
-            input[1].clone(),
-            input[3].clone(),
-            input[5].clone(),
-            input[0].clone(),
-            input[2].clone(),
-            input[4].clone(),
-        ];
-    } else {
-        // want g, L to be co-prime for a star pattern
-        // if m, n are coprime then more coprime pairs can be generated:
-        // (2m - n, m) and (2m + n, m) and (m + 2n, n)
-        // always coprime if m = n - 1 (for m >= 3)
-        let g = match L % 3 {
-            1 => L / 3, // (m + 2n, n) => 3k + 1, k = n
-            _ => match L % 9 {
-                6 => L / 3 - 1, // 3(3k-1) e.g. 15 so L/3 + 1 is div. by 3
-                _ => L / 3 + 1, // (2m + n, m) => 3k + 2, k = n AND ALSO other 3k's
-            },
-        };
-
-        let mut out = Vec::with_capacity(L);
-        for i in 0..L {
-            out.push(input[(g * (i + g)) % L].clone());
-        }
-        return out;
-    }
+#[derive(StructOpt)]
+#[structopt(setting = structopt::clap::AppSettings::ColoredHelp)]
+struct Opts {
+    /// Colour by destination instead of by origin
+    #[structopt(short = "s", long = "swap-colours")]
+    swap: bool,
+    /// Colour neighbours differently rather than similarly
+    #[structopt(short = "j", long = "jumble-colours")]
+    jumble: bool,
+    /// List all route/direction pairs and exit
+    #[structopt(short = "l", long = "list")]
+    list: bool,
+    /// Tell me more
+    #[structopt(short = "v", long="verbose")]
+    verbose: bool,
+    #[structopt(
+    value_names(&["route", "direction"]),
+    short = "o", long = "one"
+    )]
+    /// Generate visualisation for only one route/direction combination
+    one: Vec<String>,
+    /// The patronage CSV
+    in_file: PathBuf,
+    /// Determine stop names and sequences from a folder of GTFS files
+    gtfs_dir: PathBuf,
+    /// Where to put the output SVGs
+    out_dir: Option<PathBuf>,
 }
 
 fn list_routes(db: &Connection) -> Result<Vec<RouteDir>> {
@@ -157,47 +114,37 @@ fn get_boardings(
     )
 }
 
+fn get_month_year(db: &Connection) -> rusqlite::Result<(String, String)> {
+    let mut stmt = db.prepare(
+        "SELECT `month`, COUNT(`month`) AS `freq`
+    FROM     `Patronage`
+    GROUP BY `month`
+    ORDER BY `freq` DESC
+    LIMIT    1;",
+    )?;
+
+    let raw: String = stmt.query_row(NO_PARAMS, |r| r.get(0))?;
+
+    let spl: Vec<&str> = raw.splitn(2, '-').collect();
+
+    Ok((String::from(spl[1]), String::from(spl[0])))
+}
 
 fn main() {
-    let matches = App::new("fluvial")
-        .about(crate_description!())
-        .version(crate_version!())
-        .arg(
-            Arg::with_name("infile")
-                .takes_value(true)
-                .required(true)
-                .help("The patronage CSV"),
-        )
-        .arg(
-            Arg::with_name("one")
-                .short("o")
-                .help("Generate visualisation for only one route/direction combination.")
-                .value_names(&["route", "direction"]),
-        )
-        .arg(
-            Arg::with_name("gtfs_dir")
-                .short("g")
-                .takes_value(true)
-                .help("Determine stop names and sequences from a folder of GTFS files"),
-        )
-        .arg(
-            Arg::with_name("list")
-                .long("list")
-                .help("List all route/direction pairs"),
-        )
-        .get_matches();
+    let opts = Opts::from_args();
+
+    let now = std::time::Instant::now();
 
     let db = Connection::open_in_memory().expect("Could not open virtual database");
     rusqlite::vtab::csvtab::load_module(&db)
         .expect("Could not load CSV module of virtual database");
 
-    let mut infilename = matches.value_of("infile").unwrap().replace("'", "''");
-    infilename.trim();
+    let infilename = opts.in_file;
 
     // lack of spaces around = is necessary
     let schema = format!(
         "CREATE VIRTUAL TABLE PInit USING csv(filename='{}', header=YES)",
-        infilename
+        infilename.display()
     );
 
     db.execute_batch(&schema)
@@ -218,7 +165,7 @@ fn main() {
         ),
     }
 
-    if matches.is_present("list") {
+    if opts.list {
         match list_routes(&db) {
             Ok(l) => l.iter().for_each(|l| println!("{}\t{}", l.0, l.1)),
             Err(e) => eprintln!("{}", e),
@@ -228,60 +175,122 @@ fn main() {
 
         // calc/cache GTFS things here
         // some structure of
-        if matches.is_present("gtfs_dir") {
-            match load_gtfs(&db, PathBuf::from(matches.value_of("gtfs_dir").unwrap())) {
-                Ok(_) => eprintln!("Info: successfully loaded GTFS data as a database."),
-                Err(e) => {
-                    eprintln!("Failed to load GTFS from disk. {:?}", e);
-                    exit(1)
-                }
+        match load_gtfs(
+            &db,
+            PathBuf::from(opts.gtfs_dir /*matches.value_of("gtfs_dir").unwrap()*/),
+        ) {
+            Ok(_) => eprintln!("Info: successfully loaded GTFS data as a database."),
+            Err(e) => {
+                eprintln!("Failed to load GTFS from disk. {:?}", e);
+                exit(1)
             }
-        } else {
-            eprintln!("Error: Position file or GTFS directory must be specified.");
-            std::process::exit(1);
         }
 
-        if matches.is_present("one") {
-            let one_rd: Vec<&str> = matches.values_of("one").unwrap().collect();
+        let outdir = match opts.out_dir {
+            Some(o) => o,
+            None => std::env::current_dir().unwrap(),
+        };
 
-            let patronages = one(&db, one_rd[0], one_rd[1]).expect("Error collating stop patronage");
+        let (month, year) = get_month_year(&db).unwrap();
+        let mut rds: Vec<RouteDir> = Vec::with_capacity(1);
 
-            println!("Origin\tDestn.\tQuantity");
-            for (k, v) in patronages.iter() {
-                println!("{:06}\t{:06}\t{}", k.0, k.1, v);
+        if opts.one.len() == 2 {
+            rds.push((
+                String::from(opts.one[0].clone()),
+                String::from(opts.one[1].clone()),
+            ));
+        } else {
+            rds = list_routes(&db).expect("Failed to list routes");
+        }
+
+        //eprintln!("rds: {:?}", rds);
+        let mut done = 0_usize;
+        let mut skipped = 0_usize;
+        let total = rds.len();
+        eprintln!("{} routes done; {} skipped (no GTFS); {} total", done, skipped, total);
+
+        for (route, direction) in rds {
+            if opts.verbose {
+                eprintln!("{} {}", route, direction);
+            } else {
+                eprintln!("{}{} routes done; {} skipped (no GTFS); {} total", ansi_escapes::CursorPrevLine, done, skipped, total);
             }
 
-            let stop_seq: Vec<i64> = match make_stop_sequence(&db, one_rd[0], one_rd[1]) {
+            let patronages = one(&db, &route, &direction).expect("Error collating stop patronage");
+
+            // eprintln!("Origin\tDestn.\tQuantity");
+            // for (k, v) in patronages.iter() {
+            //     eprintln!("{:06}\t{:06}\t{}", k.0, k.1, v);
+            // }
+
+            let stop_seq: Vec<i64> = match make_stop_sequence(&db, &route, &direction) {
                 Ok(o) => o,
                 Err(e) => {
-                    eprintln!(
-                        "Error making stop sequences. Does {} {} exist? Perhaps it is seasonal and therefore not in the current GTFS data... try transitfeeds.com to see if they have a historical version.\n{}",
-                        one_rd[0], one_rd[1], e
-                    );
-
-                    exit(1)
+                    if opts.one.len() == 2 {
+                        eprintln!(
+                            "Error making stop sequences. Does {} {} exist? Perhaps it is seasonal and therefore not in the current GTFS data... try transitfeeds.com to see if they have a historical version.\n{}",
+                            route, direction, e
+                        );
+                        exit(1)
+                    } else {
+                        if opts.verbose {
+                            eprintln!(
+                                "{} {} {} not in GTFS; skipping",
+                                ansi_escapes::CursorPrevLine,
+                                route,
+                                direction
+                            );
+                        }
+                        skipped = skipped + 1;
+                        continue;
+                    }
                 }
             };
 
-            println!("Stop sequence: {:?}", stop_seq);
+            // println!("\nstop_id\tstop_name");
+            let stop_names = get_stop_names(&db, &stop_seq).unwrap();
+            // for id in &stop_seq {
+            //     println!("{:7}\t{}", id, stop_names.get(id).unwrap());
+            // }
 
-        // actual: call SVG gen
-        } else {
-            //             println!("Route\tDirection\tOrigin\tDestination\tPatronage");
-            //             for (route, direction) in list_routes(&db).expect("Failed to list routes").iter() {
-            //                 match one(&db, route, direction) {
-            //                     Ok(l) => l.iter().for_each(|(k, v)| {
-            //                         println!("{}\t{}\t{}\t{}\t{}", route, direction, k.0, k.1, v)
-            //                     }),
-            //                     Err(e) => eprintln!("{}", e),
-            //                 }
-            //                 // actual: call SVG gen
-            //             }
+            let service_count =
+                get_service_count(&db, &route, &direction, &month, &year).unwrap_or(0);
+
+            let out = visualise_one(
+                patronages,
+                stop_seq,
+                stop_names,
+                service_count,
+                &route,
+                &direction,
+                convert_monthname(&month),
+                &year,
+                opts.swap,
+                opts.jumble,
+                None,
+            )
+            .expect("Error generating SVG");
+
+            let mut outfile = PathBuf::from(&outdir);
+            outfile.push(&year);
+            outfile.push(&month);
+            // eprintln!("Creating {}", outfile.display());
+            std::fs::create_dir_all(&outfile).expect("Error creating directory structure");
+            outfile.push(format!("{}_{}.svg", route, direction));
+            // eprintln!("Writing to {}", outfile.display());
+            std::fs::write(outfile, out).expect("Error writing file");
+
+            done = done + 1;
         }
+    }
+
+    if opts.verbose {
+        eprintln!("Finished everything in {} seconds!", now.elapsed().as_secs())
     }
 }
 
 fn convert_direction(from: &str) -> &'static str {
+    //! Convert a direction name like "inbound" to a "0" or "1"  
     let froml = from.to_lowercase();
     match froml.as_str() {
         "counterclockwise" => "1",
@@ -292,4 +301,20 @@ fn convert_direction(from: &str) -> &'static str {
     }
 }
 
-// SELECT stop_id, stop_sequence FROM StopTimes WHERE trip_id IN (SELECT trip_id FROM Routes, Trips WHERE Routes.route_id IS Trips.route_id AND route_short_name IS 399);
+fn convert_monthname(from: &str) -> &str {
+    match from {
+        "01" => "January",
+        "02" => "February",
+        "03" => "March",
+        "04" => "April",
+        "05" => "May",
+        "06" => "June",
+        "07" => "July",
+        "08" => "August",
+        "09" => "September",
+        "10" => "October",
+        "11" => "November",
+        "12" => "December",
+        _ => from,
+    }
+}

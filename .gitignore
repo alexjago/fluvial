@@ -1,7 +1,7 @@
-.svg
+*.svg
 env
 envdir
-my_definitions.ini
+*.ini
 fluvial_output
 
 
