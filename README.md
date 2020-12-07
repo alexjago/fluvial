@@ -6,6 +6,13 @@ A program for generating bus route patronage visualisations from origin-destinat
 
 Note: this program has been going through a rewrite. It is now (v0.3) much faster but a little less flexible than the previous version (v0.2).
 The old code is still in the repository for now. Its documentation is in readme-old.md. 
+
+## Installation
+
+Get a [binary for your platform here.](https://github.com/alexjago/fluvial/releases/latest) 
+
+If you'd like to install from source, first install the Rust toolchain and then run `cargo install --git https://github.com/alexjago/fluvial.git`
+
 ## Usage
 
 Be sure to get your patronage and route data ready.
