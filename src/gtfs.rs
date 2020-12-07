@@ -143,6 +143,8 @@ FROM RTF INNER JOIN Calendar on Calendar.service_id = RTF.service_id;")?;
     Ok(())
 }
 
+// currently unused
+/*
 fn get_gtfs_routelist(db: &Connection) -> Result<Vec<String>, rusqlite::Error> {
     //! Get all the routes that *GTFS* knows about
     let mut stmt = db
@@ -155,6 +157,7 @@ fn get_gtfs_routelist(db: &Connection) -> Result<Vec<String>, rusqlite::Error> {
         .collect());
     x
 }
+*/
 
 fn get_gtfs_stop_seqs(
     db: &Connection,

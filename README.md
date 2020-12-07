@@ -1,6 +1,4 @@
-# Fluvial v0.2
-
-***N.B. This document describes an old version of the software.***
+# Fluvial
 
 [*Because transit is like a river.*](https://humantransit.org/2011/02/basics-branching-or-how-transit-is-like-a-river.html)
 
