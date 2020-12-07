@@ -101,7 +101,7 @@ fn sum_up(patronages: &BTreeMap<(i32, i32), i32>) -> (BTreeMap<i32, i32>, BTreeM
 fn make_css(
     swap_colours: bool,
     jumble_colours: bool,
-    css_path: Option<PathBuf>,
+    css_path: &Option<PathBuf>,
     stop_count: usize,
 ) -> std::io::Result<String> {
     //! Construct CSS including its colour list.
@@ -139,7 +139,7 @@ pub fn visualise_one(
     year: &str,
     swap_colours: bool,
     jumble_colours: bool,
-    css_path: Option<PathBuf>,
+    css_path: &Option<PathBuf>,
 ) -> std::io::Result<String> {
     // we need to sum boardings and alightings for each stop_id so we know how wide to make arcs
     let (boardings, alightings) = sum_up(&patronages);
@@ -389,7 +389,7 @@ pub fn visualise_one(
     let boards_count: i32 = boardings.values().sum();
     let title = format!(
         r#"<text class="title" x="{}" y="100">{} {} – {} {}</text>
-    <text class="subtitle" x="{}" y="150">{} boardings</text>"#, // {} services TODO
+    <text class="subtitle" x="{}" y="150">{} boardings; est. {} services</text>"#, // {} services TODO
         doc_width / 2.0,
         route_name,
         direction,
@@ -397,7 +397,7 @@ pub fn visualise_one(
         year,
         doc_width / 2.0,
         boards_count,
-        //service_count
+        service_count
     );
 
     // need to write instead of print, eventually

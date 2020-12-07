@@ -3,7 +3,6 @@
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::iter::Iterator;
 use std::path::PathBuf;
-use std::time::Instant;
 
 use rusqlite::{Connection, Result, NO_PARAMS};
 
@@ -11,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
 
 use super::*;
+use std::borrow::Borrow;
+use std::cmp::max;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct StopSeq {
@@ -20,11 +21,23 @@ struct StopSeq {
     qty: i64,
 }
 
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+struct ServiceCounts {
+    freq: i32,
+    monday: i8,
+    tuesday: i8,
+    wednesday: i8,
+    thursday: i8,
+    friday: i8,
+    saturday: i8,
+    sunday: i8,
+}
+
 pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Error> {
     //! Loads all the GTFS CSVs into SQLite tables in `db`
-    eprintln!("Loading GTFS. This may take several seconds...");
 
     for (t, p) in [
+        ("Calendar", "calendar.txt"),
         ("Routes", "routes.txt"),
         ("Stops", "stops.txt"),
         ("StopTimes", "stop_times.txt"),
@@ -49,9 +62,8 @@ pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Erro
         //         db.execute_batch(&schema)?;
     }
 
-    let now = Instant::now();
-
     // pre-creating tables is what makes this perform at a reasonable speed
+    db.execute_batch("CREATE TABLE Calendar AS SELECT * FROM Calendar_VIRT;")?;
     db.execute_batch("CREATE TABLE Routes AS SELECT * FROM Routes_VIRT;")?;
     db.execute_batch(
         "CREATE TABLE Stops (stop_id INT, stop_name TEXT, stop_lat REAL, stop_lon REAL);",
@@ -88,7 +100,7 @@ pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Erro
     // so we have to use shape_id, which is a bit hacky
 
     // basically I just find VIEWS easiest to reason about, so we're creating
-    // an intermediate view SSI, ~a~final~view~SSF~ and then the table StopSeqs
+    // an intermediate view SSI, and then the table StopSeqs
 
     db.execute_batch(
         "CREATE VIEW SSI (stop_id, stop_sequence, direction_id, route_short_name, shape_id, qty)
@@ -98,21 +110,35 @@ pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Erro
         GROUP BY stop_id, stop_sequence, direction_id, route_short_name, shape_id;",
     )?;
 
-    //     db.execute_batch(
-    //         "CREATE VIEW SSF (stop_name, stop_sequence, direction_id, route_short_name, shape_id, qty)
-    //         AS SELECT Stops.stop_name, SSI.stop_sequence, SSI.direction_id, SSI.route_short_name, SSI.shape_id, SSI.qty
-    //         FROM SSI
-    //         INNER JOIN Stops ON Stops.stop_id = SSI.stop_id
-    //         GROUP BY stop_sequence, direction_id, route_short_name;",
-    //     )?;
-
     // pre-chewing this table in particular makes subsequent queries lightning-fast
     db.execute_batch("CREATE TABLE StopSeqs AS SELECT * FROM SSI;")?;
 
-    eprintln!(
-        "Loaded and preprocessed GTFS in {} seconds",
-        now.elapsed().as_secs()
-    );
+    // Now we are preparing to approximate service levels
+    // GTFS is built around the concept of a service day; StopTimes only has times, not dates
+    // So a service_id might represent "weekdays" or "weekends" or "Monday - Thursday"
+
+    // RTI and then RTF connect route/directions to service_ids...
+    db.execute_batch(
+        "CREATE VIEW RTI (trip_id, service_id, route_short_name, direction_id)
+    AS SELECT trip_id, service_id, route_short_name, direction_id
+    FROM Trips INNER JOIN Routes ON Routes.route_id = Trips.route_id;",
+    )?;
+
+    // aggregating over trip_ids..
+    db.execute_batch(
+        "CREATE VIEW RTF (service_id, route_short_name, direction_id, freq)
+    AS select service_id, route_short_name, direction_id, count(*)
+    FROM RTI GROUP BY service_id, route_short_name, direction_id;",
+    )?;
+
+    // denormalising over service_ids...
+    db.execute_batch("CREATE VIEW SDI (route_short_name, direction_id, freq, monday, tuesday, wednesday, thursday, friday, saturday, sunday)
+AS SELECT route_short_name, direction_id, freq, monday, tuesday, wednesday, thursday, friday, saturday, sunday
+FROM RTF INNER JOIN Calendar on Calendar.service_id = RTF.service_id;")?;
+
+    // pre-chew everything again
+    db.execute_batch("CREATE TABLE ServiceCounts (route_short_name TEXT, direction_id TEXT, freq INTEGER, monday INTEGER, tuesday INTEGER, wednesday INTEGER, thursday INTEGER, friday INTEGER, saturday INTEGER, sunday INTEGER);")?;
+    db.execute_batch("INSERT INTO ServiceCounts SELECT * FROM SDI;")?;
 
     Ok(())
 }
@@ -146,10 +172,9 @@ fn get_gtfs_stop_seqs(
         ORDER BY shape_id, stop_sequence;",
     )?;
 
-    let out = from_rows::<StopSeq>(
-        stmt.query_named(&[(":route", &route), (":direction", &direction)])?,
-    )
-    .collect();
+    let out =
+        from_rows::<StopSeq>(stmt.query_named(&[(":route", &route), (":direction", &direction)])?)
+            .collect();
     out
 }
 
@@ -447,18 +472,53 @@ pub fn get_service_count(
     db: &Connection,
     route: &str,
     direction_name: &str,
-    _month: &str,
-    _year: &str,
-) -> rusqlite::Result<i32> {
-    let mut stmt = db.prepare("SELECT COUNT(*) FROM StopSeqs WHERE route_short_name = :route AND direction_id = :direction")?;
+    month: &str,
+    year: &str,
+) -> serde_rusqlite::Result<i32> {
 
-    let res: i32 = stmt.query_row_named(
+    let mut stmt = db.prepare("SELECT freq, monday, tuesday, wednesday, thursday, friday, saturday, sunday
+    FROM ServiceCounts WHERE route_short_name = :route AND direction_id = :direction")?;
+
+    let res = from_rows::<ServiceCounts>(stmt.query_named(
         &[
             (":route", &route),
             (":direction", &convert_direction(direction_name)),
-        ],
-        |row| row.get(0),
-    )?;
+        ])?);
 
-    Ok(res)
+    let mut out: i32 = 0;
+
+
+    // Problem: often there are a few different trip_ids. They're for different date ranges.
+    // We need to disambiguate by selecting only one trip_id per day of the week
+    // Proposed method: use the max freq for any given day
+
+    let mut maxes = vec![0_i32; 7];
+
+    for row in res {
+        let r = row?;
+        if r.monday > 0 && maxes[0] < r.freq {
+            maxes[0] = r.freq;
+        }
+        if r.tuesday > 0 && maxes[1] < r.freq {
+            maxes[1] = r.freq;
+        }
+        if r.wednesday > 0 && maxes[2] < r.freq {
+            maxes[2] = r.freq;
+        }
+        if r.thursday > 0 && maxes[3] < r.freq {
+            maxes[3] = r.freq;
+        }
+        if r.friday > 0 && maxes[4] < r.freq {
+            maxes[4] = r.freq;
+        }
+        if r.saturday > 0 && maxes[5] < r.freq {
+            maxes[5] = r.freq;
+        }
+        if r.sunday > 0 && maxes[6] < r.freq {
+            maxes[6] = r.freq;
+        }
+    }
+
+    out = maxes.iter().sum();
+    Ok((out as f32 * days_per_month(month, year) / 7.0).round() as i32)
 }

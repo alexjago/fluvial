@@ -37,7 +37,7 @@ struct Opts {
     #[structopt(short = "l", long = "list")]
     list: bool,
     /// Tell me more
-    #[structopt(short = "v", long="verbose")]
+    #[structopt(short = "v", long = "verbose")]
     verbose: bool,
     #[structopt(
     value_names(&["route", "direction"]),
@@ -45,6 +45,9 @@ struct Opts {
     )]
     /// Generate visualisation for only one route/direction combination
     one: Vec<String>,
+    #[structopt(short = "c", long = "css", value_names(&["path"]))]
+    /// Path to a custom CSS file
+    css: Option<PathBuf>,
     /// The patronage CSV
     in_file: PathBuf,
     /// Determine stop names and sequences from a folder of GTFS files
@@ -135,6 +138,10 @@ fn main() {
 
     let now = std::time::Instant::now();
 
+    if !opts.verbose {
+        eprintln!("Loading databases...");
+    }
+
     let db = Connection::open_in_memory().expect("Could not open virtual database");
     rusqlite::vtab::csvtab::load_module(&db)
         .expect("Could not load CSV module of virtual database");
@@ -158,7 +165,11 @@ fn main() {
     let schema = "INSERT INTO Patronage SELECT * FROM PInit;";
 
     match db.execute_batch(&schema) {
-        Ok(_) => eprintln!("Info: successfully loaded the patronage CSV as a database."),
+        Ok(_) => {
+            if opts.verbose {
+                eprintln!("Info: successfully loaded the patronage CSV as a database.")
+            }
+        }
         Err(e) => eprintln!(
             "Error: read the patronage CSV but could not convert the type affinities: {}",
             e,
@@ -174,12 +185,22 @@ fn main() {
         // other info-like options potentially after --list
 
         // calc/cache GTFS things here
-        // some structure of
+        if opts.verbose {
+            eprintln!("Loading GTFS. This may take several seconds...");
+        }
+
         match load_gtfs(
             &db,
             PathBuf::from(opts.gtfs_dir /*matches.value_of("gtfs_dir").unwrap()*/),
         ) {
-            Ok(_) => eprintln!("Info: successfully loaded GTFS data as a database."),
+            Ok(_) => {
+                if opts.verbose {
+                    eprintln!(
+                        "Info: successfully loaded GTFS data as a database in {} seconds.",
+                        now.elapsed().as_secs()
+                    )
+                }
+            }
             Err(e) => {
                 eprintln!("Failed to load GTFS from disk. {:?}", e);
                 exit(1)
@@ -207,21 +228,19 @@ fn main() {
         let mut done = 0_usize;
         let mut skipped = 0_usize;
         let total = rds.len();
-        eprintln!("{} routes done; {} skipped (no GTFS); {} total", done, skipped, total);
+
+        if ! opts.verbose {
+            eprint!("{}", ansi_escapes::CursorPrevLine)
+        }
+
+        eprintln!("0 routes done; 0 skipped (not in GTFS); {} total in patronage CSV", total);
 
         for (route, direction) in rds {
             if opts.verbose {
                 eprintln!("{} {}", route, direction);
-            } else {
-                eprintln!("{}{} routes done; {} skipped (no GTFS); {} total", ansi_escapes::CursorPrevLine, done, skipped, total);
             }
 
             let patronages = one(&db, &route, &direction).expect("Error collating stop patronage");
-
-            // eprintln!("Origin\tDestn.\tQuantity");
-            // for (k, v) in patronages.iter() {
-            //     eprintln!("{:06}\t{:06}\t{}", k.0, k.1, v);
-            // }
 
             let stop_seq: Vec<i64> = match make_stop_sequence(&db, &route, &direction) {
                 Ok(o) => o,
@@ -247,14 +266,10 @@ fn main() {
                 }
             };
 
-            // println!("\nstop_id\tstop_name");
             let stop_names = get_stop_names(&db, &stop_seq).unwrap();
-            // for id in &stop_seq {
-            //     println!("{:7}\t{}", id, stop_names.get(id).unwrap());
-            // }
 
             let service_count =
-                get_service_count(&db, &route, &direction, &month, &year).unwrap_or(0);
+                get_service_count(&db, &route, &direction, &month, &year).unwrap();
 
             let out = visualise_one(
                 patronages,
@@ -267,7 +282,7 @@ fn main() {
                 &year,
                 opts.swap,
                 opts.jumble,
-                None,
+                &opts.css,
             )
             .expect("Error generating SVG");
 
@@ -281,11 +296,32 @@ fn main() {
             std::fs::write(outfile, out).expect("Error writing file");
 
             done = done + 1;
-        }
-    }
 
-    if opts.verbose {
-        eprintln!("Finished everything in {} seconds!", now.elapsed().as_secs())
+            if !opts.verbose {
+                eprintln!(
+                    "{}{} routes done; {} skipped (not in GTFS); {} total in patronage CSV",
+                    ansi_escapes::CursorPrevLine,
+                    done,
+                    skipped,
+                    total
+                );
+            }
+        }
+        if opts.verbose {
+            eprintln!(
+                "Finished everything in {} seconds!",
+                now.elapsed().as_secs()
+            )
+        } else {
+            eprintln!(
+                "{}{} routes done; {} skipped (not in GTFS); {} total in patronage CSV; completed in {} seconds.",
+                ansi_escapes::CursorPrevLine,
+                done,
+                skipped,
+                total,
+                now.elapsed().as_secs()
+            );
+        }
     }
 }
 
@@ -302,19 +338,38 @@ fn convert_direction(from: &str) -> &'static str {
 }
 
 fn convert_monthname(from: &str) -> &str {
-    match from {
-        "01" => "January",
-        "02" => "February",
-        "03" => "March",
-        "04" => "April",
-        "05" => "May",
-        "06" => "June",
-        "07" => "July",
-        "08" => "August",
-        "09" => "September",
-        "10" => "October",
-        "11" => "November",
-        "12" => "December",
+    let m: u8 = from.parse().unwrap();
+    match m {
+        1 => "January",
+        2 => "February",
+        3 => "March",
+        4 => "April",
+        5 => "May",
+        6 => "June",
+        7 => "July",
+        8 => "August",
+        9 => "September",
+        10 => "October",
+        11 => "November",
+        12 => "December",
         _ => from,
+    }
+}
+
+fn days_per_month(month: &str, year: &str) -> f32 {
+    //! Returns the number of days per month (e.g. January = 31)
+    //! month and year should be digits, not names... (and January = 1)
+    let m: u8 = month.parse().unwrap();
+    let y: usize = year.parse().unwrap();
+    let leap: bool = (y % 4 == 0) && ((y % 100 != 0) || (y % 400 == 0));
+
+    match m {
+        9 | 4 | 6 | 11 => 30.0, // (1) 30 days hath September, April, June and November,
+        2 => match leap {
+            // (3) except February,
+            true => 29.0,  // (3b) and 29 days each leap year.
+            false => 28.0, // (3a) which has 28 days clear,
+        },
+        _ => 31.0, // (2) all the rest have 31,
     }
 }
