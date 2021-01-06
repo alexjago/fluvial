@@ -403,7 +403,7 @@ pub fn visualise_one(
     // need to write instead of print, eventually
     Ok(format!(
         r#"<?xml version="1.0" encoding="utf-8" ?>
-<svg baseProfile="full" height="{}" version="1.1" width="{}"
+<svg baseProfile="full" height="100%" version="1.1" width="100%" viewBox="0 0 {} {}"
      xmlns="http://www.w3.org/2000/svg">
     <defs><style type="text/css"><![CDATA[
     {}]]>
@@ -416,6 +416,6 @@ pub fn visualise_one(
     {}
     {}
 </svg>"#,
-        doc_height, doc_width, css, paths_rev, paths_fwd, labels, bargraph, midline, title
+        doc_width, doc_height, css, paths_rev, paths_fwd, labels, bargraph, midline, title
     ))
 }

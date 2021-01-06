@@ -11,8 +11,6 @@ use serde_rusqlite::*;
 
 use super::*;
 
-
-
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct StopSeq {
     stop_id: i64,
@@ -478,16 +476,17 @@ pub fn get_service_count(
     month: &str,
     year: &str,
 ) -> serde_rusqlite::Result<i32> {
-//! Get the (estimated) monthly service count for the specified route/direction.
+    //! Get the (estimated) monthly service count for the specified route/direction.
 
-    let mut stmt = db.prepare("SELECT freq, monday, tuesday, wednesday, thursday, friday, saturday, sunday
-    FROM ServiceCounts WHERE route_short_name = :route AND direction_id = :direction")?;
+    let mut stmt = db.prepare(
+        "SELECT freq, monday, tuesday, wednesday, thursday, friday, saturday, sunday
+    FROM ServiceCounts WHERE route_short_name = :route AND direction_id = :direction",
+    )?;
 
-    let res = from_rows::<ServiceCounts>(stmt.query_named(
-        &[
-            (":route", &route),
-            (":direction", &convert_direction(direction_name)),
-        ])?);
+    let res = from_rows::<ServiceCounts>(stmt.query_named(&[
+        (":route", &route),
+        (":direction", &convert_direction(direction_name)),
+    ])?);
 
     // Problem: often there are a few different trip_ids. They're for different date ranges.
     // We need to disambiguate by selecting only one trip_id per day of the week
@@ -520,6 +519,6 @@ pub fn get_service_count(
         }
     }
 
-    let out :i32 = maxes.iter().sum();
+    let out: i32 = maxes.iter().sum();
     Ok((out as f32 * days_per_month(month, year) / 7.0).round() as i32)
 }

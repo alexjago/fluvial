@@ -7,13 +7,13 @@ extern crate ansi_escapes;
 extern crate hsluv;
 extern crate structopt;
 
+use rusqlite::{Connection, Result, NO_PARAMS};
 use structopt::StructOpt;
 
-use rusqlite::{Connection, Result, NO_PARAMS};
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::iter::Iterator;
 use std::path::PathBuf;
-
 use std::process::exit;
 
 mod gtfs;
@@ -36,22 +36,30 @@ struct Opts {
     /// List all route/direction pairs and exit
     #[structopt(short = "l", long = "list")]
     list: bool,
+    /// Print license information and acknowledgements and exit
+    #[structopt(short = "L", long = "license")]
+    license: bool,
     /// Tell me more
     #[structopt(short = "v", long = "verbose")]
     verbose: bool,
     #[structopt(
     value_names(&["route", "direction"]),
-    short = "o", long = "one"
+    short = "o", long = "one",
     )]
     /// Generate visualisation for only one route/direction combination
     one: Vec<String>,
     #[structopt(short = "c", long = "css", value_names(&["path"]))]
-    /// Path to a custom CSS file
+    /// Path to a custom CSS file for the SVGs
     css: Option<PathBuf>,
-    /// The patronage CSV
-    in_file: PathBuf,
     /// Determine stop names and sequences from a folder of GTFS files
-    gtfs_dir: PathBuf,
+    #[structopt(short = "g", long = "gtfs", value_names(&["path"]), required_unless = "pos-file")]
+    gtfs_dir: Option<PathBuf>,
+    /// Take stop names and sequences from a positions CSV, not GTFS
+    #[structopt(short = "p", long = "positions", value_names(&["path"]))]
+    pos_file: Option<PathBuf>,
+    /// The patronage CSV
+    #[structopt(required_unless = "license")]
+    in_file: Option<PathBuf>,
     /// Where to put the output SVGs
     out_dir: Option<PathBuf>,
 }
@@ -136,6 +144,15 @@ fn get_month_year(db: &Connection) -> rusqlite::Result<(String, String)> {
 fn main() {
     let opts = Opts::from_args();
 
+    if opts.license {
+        println!("Fluvial, a transit patronage visualiser.");
+        println!("Copyright (c) 2020, Alex Jago.\nhttps://abjago.net\n");
+        println!("{}", include_str!("gpl_notice.txt"));
+        println!("\nAll components, their authors, and license codes, are listed below:\n");
+        println!("{}", include_str!("dependencies.txt"));
+        exit(0);
+    }
+
     let now = std::time::Instant::now();
 
     if !opts.verbose {
@@ -146,7 +163,7 @@ fn main() {
     rusqlite::vtab::csvtab::load_module(&db)
         .expect("Could not load CSV module of virtual database");
 
-    let infilename = opts.in_file;
+    let infilename = opts.in_file.expect("Patronage CSV not supplied");
 
     // lack of spaces around = is necessary
     let schema = format!(
@@ -184,14 +201,21 @@ fn main() {
     } else {
         // other info-like options potentially after --list
 
+        if opts.pos_file.is_some() {
+            eprintln!("Sorry, positions files aren't supported yet.");
+            exit(1);
+        }
+
         // calc/cache GTFS things here
-        if opts.verbose {
+        if opts.verbose && opts.gtfs_dir.is_some() {
             eprintln!("Loading GTFS. This may take several seconds...");
         }
 
         match load_gtfs(
             &db,
-            PathBuf::from(opts.gtfs_dir /*matches.value_of("gtfs_dir").unwrap()*/),
+            PathBuf::from(
+                opts.gtfs_dir.unwrap(), /*matches.value_of("gtfs_dir").unwrap()*/
+            ),
         ) {
             Ok(_) => {
                 if opts.verbose {
@@ -215,6 +239,9 @@ fn main() {
         let (month, year) = get_month_year(&db).unwrap();
         let mut rds: Vec<RouteDir> = Vec::with_capacity(1);
 
+        // {route : [directions]}
+        let mut rdt: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
         if opts.one.len() == 2 {
             rds.push((
                 String::from(opts.one[0].clone()),
@@ -229,11 +256,15 @@ fn main() {
         let mut skipped = 0_usize;
         let total = rds.len();
 
-        if ! opts.verbose {
+
+        if !opts.verbose {
             eprint!("{}", ansi_escapes::CursorPrevLine)
         }
 
-        eprintln!("0 routes done; 0 skipped (not in GTFS); {} total in patronage CSV", total);
+        eprintln!(
+            "0 routes done; 0 skipped (not in GTFS); {} total in patronage CSV",
+            total
+        );
 
         for (route, direction) in rds {
             if opts.verbose {
@@ -268,8 +299,7 @@ fn main() {
 
             let stop_names = get_stop_names(&db, &stop_seq).unwrap();
 
-            let service_count =
-                get_service_count(&db, &route, &direction, &month, &year).unwrap();
+            let service_count = get_service_count(&db, &route, &direction, &month, &year).unwrap();
 
             let out = visualise_one(
                 patronages,
@@ -295,6 +325,14 @@ fn main() {
             // eprintln!("Writing to {}", outfile.display());
             std::fs::write(outfile, out).expect("Error writing file");
 
+            // do this right at the end, so that if anything else causes a skip,
+            // it won't be in the index
+            if !rdt.contains_key(&route) {
+                rdt.insert(route.clone(), vec![direction.clone()]);
+            } else {
+                rdt.get_mut(&route).unwrap().push(direction.clone());
+            }
+
             done = done + 1;
 
             if !opts.verbose {
@@ -307,6 +345,33 @@ fn main() {
                 );
             }
         }
+
+        // Write index.html if not a --one
+        if opts.one.len() != 2 {
+
+            let mut index_html = format!(r#"<html>
+<head>
+<body>
+<h4 style="margin-left: 1vw">{} {}</h4>
+<table>"#, convert_monthname(&month), &year);
+
+            for (k, v) in rdt {
+                index_html.push_str("<tr>");
+                for d in v {
+                    index_html.push_str(&format!(r#"<td><a href="{}_{}.svg">{} {}</a></td>"#, k, d, k, d));
+                }
+                index_html.push_str("</tr>")
+            }
+            index_html.push_str("</table>\n</body>\n</html>");
+
+            let mut outfile = PathBuf::from(&outdir);
+            outfile.push(&year);
+            outfile.push(&month);
+            std::fs::create_dir_all(&outfile).expect("Error creating directory structure");
+            outfile.push("index.html");
+            std::fs::write(outfile, index_html).expect("Error writing file");
+        }
+
         if opts.verbose {
             eprintln!(
                 "Finished everything in {} seconds!",
@@ -322,6 +387,7 @@ fn main() {
                 now.elapsed().as_secs()
             );
         }
+
     }
 }
 

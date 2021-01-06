@@ -1,10 +1,11 @@
 [package]
 name = "fluvial"
-version = "0.3.1"
-authors = ["alexjago"]
+version = "0.3.2"
+authors = ["Alex Jago"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 description = "Visualise stop-by-stop passenger patronage over routes."
+repository = "https://github.com/alexjago/fluvial"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
