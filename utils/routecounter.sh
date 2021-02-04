@@ -1,7 +1,7 @@
 # Generate 
 
 if [[ $# -ne 1 ]]; then
-&>2 echo "USAGE: ./frequentstopper.sh GTFS_DIR > output.csv"
+&>2 echo "USAGE: ./routecounter.sh GTFS_DIR > output.csv"
 else
 cd "$1"
 
