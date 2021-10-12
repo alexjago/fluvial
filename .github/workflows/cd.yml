@@ -76,7 +76,7 @@ jobs:
         run: |
           cd target/${{ matrix.job.target }}/release
           ####### reduce binary size by removing debug symbols #######
-          BINARY_NAME={{project-name}}${{ matrix.job.binary-postfix }}
+          BINARY_NAME=fluvial-${{ matrix.job.binary-postfix }}
           if [[ ${{ matrix.job.target }} == aarch64-unknown-linux-gnu ]]; then
             GCC_PREFIX="aarch64-linux-gnu-"
           else
@@ -84,7 +84,7 @@ jobs:
           fi
           "$GCC_PREFIX"strip $BINARY_NAME
           ########## create tar.gz ##########
-          RELEASE_NAME={{project-name}}-${GITHUB_REF/refs\/tags\//}-${{ matrix.job.os-name }}-${{ matrix.job.architecture }}
+          RELEASE_NAME=fluvial-${GITHUB_REF/refs\/tags\//}-${{ matrix.job.os-name }}-${{ matrix.job.architecture }}
           tar czvf $RELEASE_NAME.tar.gz $BINARY_NAME
           ########## create sha256 ##########
           if [[ ${{ runner.os }} == 'Windows' ]]; then
@@ -96,7 +96,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            target/${{ matrix.job.target }}/release/{{project-name}}-*.tar.gz
-            target/${{ matrix.job.target }}/release/{{project-name}}-*.sha256
+            target/${{ matrix.job.target }}/release/fluvial-*.tar.gz
+            target/${{ matrix.job.target }}/release/fluvial-*.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
