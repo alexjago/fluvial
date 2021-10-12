@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::iter::Iterator;
 use std::path::PathBuf;
 
-use rusqlite::{Connection, Result, NO_PARAMS};
+use rusqlite::{Connection, Result};
 
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
@@ -227,7 +227,7 @@ pub fn make_stop_sequence(
     };
     //     eprintln!("Executed GTFS query OK! {} rows returned...", rows.len());
 
-    if rows.len() == 0 {
+    if rows.is_empty() {
         return Err(serde_rusqlite::Error::Rusqlite(
             rusqlite::Error::QueryReturnedNoRows,
         ));
@@ -351,7 +351,7 @@ pub fn make_stop_sequence(
         }) {
             let mut de = VecDeque::new();
             for r in rows.iter() {
-                if &r.shape_id == *shape {
+                if r.shape_id == *shape {
                     de.push_back(r.stop_id)
                 }
             }
@@ -414,7 +414,7 @@ fn topo_merge(mut input: VecDeque<VecDeque<i64>>) -> Vec<i64> {
                 //                     println!("... found duplicate {} at {}", id, c);
                 for t in temp.iter() {
                     output.insert(cursor, *t);
-                    cursor = cursor + 1;
+                    cursor += 1;
                 }
                 temp.clear();
             } else {
@@ -429,7 +429,7 @@ fn topo_merge(mut input: VecDeque<VecDeque<i64>>) -> Vec<i64> {
         temp.clear();
     }
 
-    return output;
+    output
 }
 
 fn gc_distance(from_lat: f64, from_lon: f64, to_lat: f64, to_lon: f64) -> f64 {
@@ -454,7 +454,7 @@ fn gc_distance(from_lat: f64, from_lon: f64, to_lat: f64, to_lon: f64) -> f64 {
 
 pub fn get_stop_names(
     db: &Connection,
-    input: &Vec<i64>,
+    input: &[i64],
 ) -> Result<BTreeMap<i64, String>, serde_rusqlite::Error> {
     //! Get stop names from stop sequences
     let mut output: BTreeMap<i64, String> = BTreeMap::new();
@@ -466,7 +466,7 @@ pub fn get_stop_names(
         output.insert(*id, name);
     }
 
-    return Ok(output);
+    Ok(output)
 }
 
 pub fn get_service_count(

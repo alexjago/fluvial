@@ -9,11 +9,12 @@ extern crate structopt;
 
 use rusqlite::{Connection, Result, NO_PARAMS};
 use structopt::StructOpt;
+use tempfile::{NamedTempFile, TempDir};
 
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::Cursor;
 use std::iter::Iterator;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 
 mod gtfs;
@@ -21,11 +22,13 @@ use crate::gtfs::*;
 
 mod visualise;
 use crate::visualise::*;
+use std::fs::File;
 
 type RouteDir = (String, String);
 
-#[derive(StructOpt)]
+#[derive(Debug, StructOpt)]
 #[structopt(setting = structopt::clap::AppSettings::ColoredHelp)]
+#[structopt(about)]
 struct Opts {
     /// Colour by destination instead of by origin
     #[structopt(short = "s", long = "swap-colours")]
@@ -42,6 +45,12 @@ struct Opts {
     /// Tell me more
     #[structopt(short = "v", long = "verbose")]
     verbose: bool,
+    /// Get all utility scripts at https://github.com/alexjago/fluvial/tree/master/utils
+    #[structopt(short = "U", long = "utilities")]
+    utilities: bool,
+    #[structopt(long = "ftime")]
+    /// Filter patronage by time of day (by matching in the `time` column)
+    ftime: Option<String>,
     #[structopt(
     value_names(&["route", "direction"]),
     short = "o", long = "one",
@@ -51,14 +60,14 @@ struct Opts {
     #[structopt(short = "c", long = "css", value_names(&["path"]))]
     /// Path to a custom CSS file for the SVGs
     css: Option<PathBuf>,
-    /// Determine stop names and sequences from a folder of GTFS files
-    #[structopt(short = "g", long = "gtfs", value_names(&["path"]), required_unless = "pos-file")]
+    #[structopt(short = "b", long = "batch", conflicts_with = "license")]
+    /// Treat in_file as a batch CSV of <patronage zip URL>, <gtfs zip URL>; conflicts with --gtfs
+    batch: bool,
+    /// A directory/URI of GTFS files to determine stop names and sequences from
+    #[structopt(short = "g", long = "gtfs", value_names(&["path"]), required_unless_one = &["batch", "license", "utilities"], conflicts_with = "batch")]
     gtfs_dir: Option<PathBuf>,
-    /// Take stop names and sequences from a positions CSV, not GTFS
-    #[structopt(short = "p", long = "positions", value_names(&["path"]))]
-    pos_file: Option<PathBuf>,
-    /// The patronage CSV
-    #[structopt(required_unless = "license")]
+    /// The path/URI of the patronage CSV (or path to batch file, with --batch)
+    #[structopt(required_unless_one = &["license", "utilities"])]
     in_file: Option<PathBuf>,
     /// Where to put the output SVGs
     out_dir: Option<PathBuf>,
@@ -78,18 +87,43 @@ fn list_routes(db: &Connection) -> Result<Vec<RouteDir>> {
     Ok(rd)
 }
 
-fn one(db: &Connection, route: &str, direction: &str) -> Result<BTreeMap<(i32, i32), i32>> {
+fn make_one(
+    db: &Connection,
+    route: &str,
+    direction: &str,
+    ftime: &Option<String>,
+) -> Result<BTreeMap<(i32, i32), i32>> {
     //! Get a mapping of {(origin, destination) : patronage} for a **single** route/direction pair.
 
-    let mut stmt = db.prepare("SELECT origin_stop, destination_stop, sum(quantity)
-        FROM Patronage WHERE route IS :route AND direction IS :direction GROUP BY origin_stop, destination_stop;")
-        .expect("Failed preparing statement.");
+    // The time filtering is a bit wacky. Something like `time IS *` in a WHERE clause isn't allowed
+    // but it *is* OK to do `((time IS ...) OR (1=1))`. The rest of the madness is just to
+    // ensure that we always pass one parameter for :time on line 118 and to handle --ftime NULL
+
+    let ftime_ins = match ftime {
+        Some(_) => String::from("AND (time IS :time)"),
+        None => String::from("AND ((time IS :time) OR (1=1))"),
+    };
+
+    let ftime_sub = match ftime {
+        Some(s) => s.clone(),
+        None => String::from("NULL"),
+    };
+
+    let stmt_txt = format!("SELECT origin_stop, destination_stop, sum(quantity)
+        FROM Patronage WHERE route IS :route AND direction IS :direction {} GROUP BY origin_stop, destination_stop;", ftime_ins);
+
+    let mut stmt = db.prepare(&stmt_txt).expect("Failed preparing statement.");
 
     let mut tree: BTreeMap<(i32, i32), i32> = BTreeMap::new();
 
-    stmt.query_map_named(&[(":route", &route), (":direction", &direction)], |row| {
-        Ok((row.get(0), row.get(1), row.get(2)))
-    })?
+    stmt.query_map_named(
+        &[
+            (":route", &route),
+            (":direction", &direction),
+            (":time", &ftime_sub.as_str()),
+        ],
+        |row| Ok((row.get(0), row.get(1), row.get(2))),
+    )?
     .filter_map(|l| l.ok())
     .filter(|l| l.0.is_ok() && l.1.is_ok() && l.2.is_ok())
     .map(|l| (l.0.unwrap(), l.1.unwrap(), l.2.unwrap()))
@@ -101,6 +135,7 @@ fn one(db: &Connection, route: &str, direction: &str) -> Result<BTreeMap<(i32, i
 }
 
 fn get_boardings(
+    // used in gtfs.rs for stop sequencing
     db: &Connection,
     route: &str,
     direction: &str,
@@ -144,18 +179,96 @@ fn get_month_year(db: &Connection) -> rusqlite::Result<(String, String)> {
 fn main() {
     let opts = Opts::from_args();
 
+    if opts.verbose {
+        eprintln!("{:#?}", opts);
+    }
+
     if opts.license {
         println!("Fluvial, a transit patronage visualiser.");
         println!("Copyright (c) 2020, Alex Jago.\nhttps://abjago.net\n");
         println!("{}", include_str!("gpl_notice.txt"));
-        println!("\nAll components, their authors, and license codes, are listed below:\n");
+        println!("\nAll components, their authors, source code repositories, and license details are listed below:\n");
         println!("{}", include_str!("dependencies.txt"));
+        /* Before releasing a new version, run...
+           cargo-license --avoid-build-deps --avoid-dev-deps -a -t > src/dependencies.txt
+        */
         exit(0);
     }
 
+    if opts.utilities {
+        println!("Get all utility scripts for Fluvial at\nhttps://github.com/alexjago/fluvial/tree/master/utils");
+        exit(0);
+    }
+
+    if opts.batch {
+        // TODO:
+        // if path is "-" then it's std input
+        // thanks /u/burntsushi
+        // https://www.reddit.com/r/rust/comments/jv3q3e/how_to_select_between_reading_from_a_file_and/gci1mww/
+        let path = opts
+            .in_file
+            .expect("Please specify a file path '-' for standard input");
+
+        let batch_stream: Box<dyn std::io::Read + 'static> = if path.as_os_str() == "-" {
+            Box::new(std::io::stdin())
+        } else {
+            Box::new(std::fs::File::open(&path).expect("Error opening batch file for reading"))
+        };
+
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(batch_stream);
+
+        for r in rdr.records().filter_map(|s| s.ok()) {
+            let patronage_uri = PathBuf::from(r.get(0).expect("Missing patronage URI!"));
+            let gtfs_uri = PathBuf::from(r.get(1).expect("Missing GTFS URI!"));
+
+            single_month(
+                &opts.verbose,
+                &Some(patronage_uri),
+                &opts.list,
+                &Some(gtfs_uri),
+                &opts.out_dir,
+                &opts.one,
+                &opts.ftime,
+                &opts.swap,
+                &opts.jumble,
+                &opts.css,
+            );
+        }
+    } else {
+        // no downloads or anything, just go
+        single_month(
+            &opts.verbose,
+            &opts.in_file,
+            &opts.list,
+            &opts.gtfs_dir,
+            &opts.out_dir,
+            &opts.one,
+            &opts.ftime,
+            &opts.swap,
+            &opts.jumble,
+            &opts.css,
+        );
+    }
+}
+
+fn single_month(
+    verbose: &bool,
+    in_file: &Option<PathBuf>,
+    list: &bool,
+    gtfs_dir: &Option<PathBuf>,
+    out_dir: &Option<PathBuf>,
+    one: &[String],
+    ftime: &Option<String>,
+    swap: &bool,
+    jumble: &bool,
+    css: &Option<PathBuf>,
+) {
+    //! Run a single month's worth of processing.
     let now = std::time::Instant::now();
 
-    if !opts.verbose {
+    if !verbose {
         eprintln!("Loading databases...");
     }
 
@@ -163,7 +276,51 @@ fn main() {
     rusqlite::vtab::csvtab::load_module(&db)
         .expect("Could not load CSV module of virtual database");
 
-    let infilename = opts.in_file.expect("Patronage CSV not supplied");
+    let mut infilename = in_file
+        .as_ref()
+        .expect("Patronage CSV not supplied")
+        .clone();
+
+    // now for the big mess
+    let mut pat_tmpfile: NamedTempFile;
+
+    if !Path::new(&infilename).exists() {
+        // attempt to download it to a temporary file instead
+        eprintln!("Downloading {:#?}", infilename);
+        pat_tmpfile = NamedTempFile::new().expect("Error creating temporary file");
+        let mut resp = reqwest::blocking::get(infilename.to_str().unwrap())
+            .expect("Could not find or download patronage data");
+
+        eprintln!("{:#?}", resp.headers());
+        if resp.headers().contains_key("content-type")
+            && resp
+                .headers()
+                .get("content-type")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_ascii_lowercase()
+                .ends_with("zip")
+        {
+            // this is a zipfile lol
+            let cur = Cursor::new(resp.bytes().unwrap());
+            // Reqwest responses are merely Read, not Seek.. but Cursors are, so maybe this will work
+            let mut zippy = zip::ZipArchive::new(cur).expect("Error reading downloaded ZIP");
+            for i in 0..zippy.len() {
+                let mut f = zippy.by_index(i).expect("Error unzipping");
+                eprintln!("{}", f.name());
+                if f.name().ends_with(".csv") {
+                    std::io::copy(&mut f, &mut pat_tmpfile).expect("Error storing Patronage CSV");
+                    break;
+                }
+            }
+        } else {
+            // copy and hope
+            resp.copy_to(&mut pat_tmpfile)
+                .expect("Error saving patronage data");
+        }
+        infilename = pat_tmpfile.path().to_path_buf();
+    }
 
     // lack of spaces around = is necessary
     let schema = format!(
@@ -183,7 +340,7 @@ fn main() {
 
     match db.execute_batch(&schema) {
         Ok(_) => {
-            if opts.verbose {
+            if *verbose {
                 eprintln!("Info: successfully loaded the patronage CSV as a database.")
             }
         }
@@ -193,7 +350,7 @@ fn main() {
         ),
     }
 
-    if opts.list {
+    if *list {
         match list_routes(&db) {
             Ok(l) => l.iter().for_each(|l| println!("{}\t{}", l.0, l.1)),
             Err(e) => eprintln!("{}", e),
@@ -201,24 +358,53 @@ fn main() {
     } else {
         // other info-like options potentially after --list
 
-        if opts.pos_file.is_some() {
-            eprintln!("Sorry, positions files aren't supported yet.");
-            exit(1);
-        }
-
         // calc/cache GTFS things here
-        if opts.verbose && opts.gtfs_dir.is_some() {
+        if *verbose && gtfs_dir.is_some() {
             eprintln!("Loading GTFS. This may take several seconds...");
         }
 
-        match load_gtfs(
-            &db,
-            PathBuf::from(
-                opts.gtfs_dir.unwrap(), /*matches.value_of("gtfs_dir").unwrap()*/
-            ),
-        ) {
+        // Attempt download if not a local path
+        let mut gtfs_actual_dir = gtfs_dir.as_ref().unwrap().clone();
+        let gtfs_tmpdir: TempDir; // needed for scope
+        if !Path::new(gtfs_dir.as_ref().unwrap()).exists() {
+            // gotta download the thing
+            eprintln!("Downloading {:#?}", gtfs_dir.as_ref().unwrap());
+            gtfs_tmpdir = tempfile::tempdir().expect("Could not create temporary GTFS directory");
+            let mut tmp_path = gtfs_tmpdir.path().to_path_buf();
+
+            let resp = reqwest::blocking::get(gtfs_dir.as_ref().unwrap().to_str().unwrap())
+                .expect("Could not find or download patronage data");
+            eprintln!("{:#?}", resp.headers());
+            if resp.headers().contains_key("content-type")
+                && resp
+                    .headers()
+                    .get("content-type")
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_ascii_lowercase()
+                    .ends_with("zip")
+            {
+                let cur = Cursor::new(resp.bytes().unwrap());
+                let mut zippy = zip::ZipArchive::new(cur).expect("Error reading downloaded ZIP");
+
+                for i in 0..zippy.len() {
+                    let mut zfile = zippy.by_index(i).expect("Error reading GTFS ZIP");
+                    tmp_path.push(zfile.name());
+                    let mut actual = File::create(&tmp_path).expect("Error saving GTFS file");
+                    std::io::copy(&mut zfile, &mut actual).expect("Error extracting from GTFS ZIP");
+                    tmp_path.pop();
+                }
+            } else {
+                eprintln!("Didn't download a GTFS zipfile. Skipping this month.");
+                return;
+            }
+            gtfs_actual_dir = tmp_path;
+        }
+
+        match load_gtfs(&db, gtfs_actual_dir) {
             Ok(_) => {
-                if opts.verbose {
+                if *verbose {
                     eprintln!(
                         "Info: successfully loaded GTFS data as a database in {} seconds.",
                         now.elapsed().as_secs()
@@ -231,22 +417,21 @@ fn main() {
             }
         }
 
-        let outdir = match opts.out_dir {
-            Some(o) => o,
+        // Output Directory
+        let outdir = match out_dir {
+            Some(o) => o.clone(),
             None => std::env::current_dir().unwrap(),
         };
 
+        // Month and Year
         let (month, year) = get_month_year(&db).unwrap();
         let mut rds: Vec<RouteDir> = Vec::with_capacity(1);
 
         // {route : [directions]}
         let mut rdt: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
-        if opts.one.len() == 2 {
-            rds.push((
-                String::from(opts.one[0].clone()),
-                String::from(opts.one[1].clone()),
-            ));
+        if one.len() == 2 {
+            rds.push((one[0].clone(), one[1].clone()));
         } else {
             rds = list_routes(&db).expect("Failed to list routes");
         }
@@ -256,8 +441,7 @@ fn main() {
         let mut skipped = 0_usize;
         let total = rds.len();
 
-
-        if !opts.verbose {
+        if !verbose {
             eprint!("{}", ansi_escapes::CursorPrevLine)
         }
 
@@ -267,23 +451,24 @@ fn main() {
         );
 
         for (route, direction) in rds {
-            if opts.verbose {
+            if *verbose {
                 eprintln!("{} {}", route, direction);
             }
 
-            let patronages = one(&db, &route, &direction).expect("Error collating stop patronage");
+            let patronages =
+                make_one(&db, &route, &direction, &ftime).expect("Error collating stop patronage");
 
             let stop_seq: Vec<i64> = match make_stop_sequence(&db, &route, &direction) {
                 Ok(o) => o,
                 Err(e) => {
-                    if opts.one.len() == 2 {
+                    if one.len() == 2 {
                         eprintln!(
                             "Error making stop sequences. Does {} {} exist? Perhaps it is seasonal and therefore not in the current GTFS data... try transitfeeds.com to see if they have a historical version.\n{}",
                             route, direction, e
                         );
                         exit(1)
                     } else {
-                        if opts.verbose {
+                        if *verbose {
                             eprintln!(
                                 "{} {} {} not in GTFS; skipping",
                                 ansi_escapes::CursorPrevLine,
@@ -291,7 +476,7 @@ fn main() {
                                 direction
                             );
                         }
-                        skipped = skipped + 1;
+                        skipped += 1;
                         continue;
                     }
                 }
@@ -308,22 +493,24 @@ fn main() {
                 service_count,
                 &route,
                 &direction,
+                &ftime,
                 convert_monthname(&month),
                 &year,
-                opts.swap,
-                opts.jumble,
-                &opts.css,
+                *swap,
+                *jumble,
+                &css,
             )
             .expect("Error generating SVG");
 
-            let mut outfile = PathBuf::from(&outdir);
-            outfile.push(&year);
-            outfile.push(&month);
-            // eprintln!("Creating {}", outfile.display());
-            std::fs::create_dir_all(&outfile).expect("Error creating directory structure");
-            outfile.push(format!("{}_{}.svg", route, direction));
-            // eprintln!("Writing to {}", outfile.display());
-            std::fs::write(outfile, out).expect("Error writing file");
+            write_outfile(
+                &outdir,
+                &format!("{}_{}.svg", route, direction),
+                &month,
+                &year,
+                &ftime,
+                &out,
+            )
+            .expect("Error writing SVG file");
 
             // do this right at the end, so that if anything else causes a skip,
             // it won't be in the index
@@ -333,9 +520,9 @@ fn main() {
                 rdt.get_mut(&route).unwrap().push(direction.clone());
             }
 
-            done = done + 1;
+            done += 1;
 
-            if !opts.verbose {
+            if !verbose {
                 eprintln!(
                     "{}{} routes done; {} skipped (not in GTFS); {} total in patronage CSV",
                     ansi_escapes::CursorPrevLine,
@@ -347,32 +534,35 @@ fn main() {
         }
 
         // Write index.html if not a --one
-        if opts.one.len() != 2 {
-
-            let mut index_html = format!(r#"<html>
+        if one.len() != 2 {
+            let mut index_html = format!(
+                r#"<html>
 <head>
 <body>
 <h4 style="margin-left: 1vw">{} {}</h4>
-<table>"#, convert_monthname(&month), &year);
+<table>
+"#,
+                convert_monthname(&month),
+                &year
+            );
 
             for (k, v) in rdt {
                 index_html.push_str("<tr>");
                 for d in v {
-                    index_html.push_str(&format!(r#"<td><a href="{}_{}.svg">{} {}</a></td>"#, k, d, k, d));
+                    index_html.push_str(&format!(
+                        r#"<td><a href="{}_{}.svg">{} {}</a></td>"#,
+                        k, d, k, d
+                    ));
                 }
-                index_html.push_str("</tr>")
+                index_html.push_str("</tr>\n")
             }
             index_html.push_str("</table>\n</body>\n</html>");
 
-            let mut outfile = PathBuf::from(&outdir);
-            outfile.push(&year);
-            outfile.push(&month);
-            std::fs::create_dir_all(&outfile).expect("Error creating directory structure");
-            outfile.push("index.html");
-            std::fs::write(outfile, index_html).expect("Error writing file");
+            write_outfile(&outdir, "index.html", &month, &year, &ftime, &index_html)
+                .expect("Error writing index");
         }
 
-        if opts.verbose {
+        if *verbose {
             eprintln!(
                 "Finished everything in {} seconds!",
                 now.elapsed().as_secs()
@@ -387,8 +577,35 @@ fn main() {
                 now.elapsed().as_secs()
             );
         }
-
     }
+}
+
+fn write_outfile(
+    out_dir: &PathBuf,
+    filename: &str,
+    month: &str,
+    year: &str,
+    ftime: &Option<String>,
+    contents: &str,
+) -> std::result::Result<(), std::io::Error> {
+    let mut outfile = PathBuf::from(&out_dir);
+    outfile.push(&year);
+    outfile.push(&month);
+    if ftime.is_some() {
+        outfile.push(
+            ftime
+                .as_ref()
+                .unwrap()
+                .replace(' ', &"_")
+                .replace('(', &"")
+                .replace(')', &"")
+                .replace(':', &""),
+        );
+    }
+    std::fs::create_dir_all(&outfile)?;
+    outfile.push(filename);
+    std::fs::write(outfile, contents)?;
+    Ok(())
 }
 
 fn convert_direction(from: &str) -> &'static str {

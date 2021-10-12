@@ -29,7 +29,7 @@ fn colour_list(count: usize) -> Vec<String> {
         };
         out.push(hsluv_to_hex((hue, sat, val)));
     }
-    return out;
+    out
 }
 
 fn jumbled<T>(input: Vec<T>) -> Vec<T>
@@ -42,23 +42,23 @@ where
     let len = input.len();
 
     if len < 2 {
-        return input;
+        input
     } else if len == 4 {
-        return vec![
+        vec![
             input[1].clone(),
             input[3].clone(),
             input[0].clone(),
             input[2].clone(),
-        ];
+        ]
     } else if len == 6 {
-        return vec![
+        vec![
             input[1].clone(),
             input[3].clone(),
             input[5].clone(),
             input[0].clone(),
             input[2].clone(),
             input[4].clone(),
-        ];
+        ]
     } else {
         // want g, L to be co-prime for a star pattern
         // if m, n are coprime then more coprime pairs can be generated:
@@ -76,7 +76,7 @@ where
         for i in 0..len {
             out.push(input[(g * (i + g)) % len].clone());
         }
-        return out;
+        out
     }
 }
 
@@ -95,7 +95,7 @@ fn sum_up(patronages: &BTreeMap<(i32, i32), i32>) -> (BTreeMap<i32, i32>, BTreeM
         boardings.insert(from, qty + fq);
         alightings.insert(to, qty + tq);
     }
-    return (boardings, alightings);
+    (boardings, alightings)
 }
 
 fn make_css(
@@ -135,6 +135,7 @@ pub fn visualise_one(
     service_count: i32,
     route_name: &str,
     direction: &str,
+    ftime: &Option<String>,
     month: &str,
     year: &str,
     swap_colours: bool,
@@ -386,10 +387,15 @@ pub fn visualise_one(
         midline.push_str(&circ);
     }
 
+    let ftime_ins = match ftime {
+        Some(s) => format!("; {}", s),
+        None => String::new(),
+    };
+
     let boards_count: i32 = boardings.values().sum();
     let title = format!(
         r#"<text class="title" x="{}" y="100">{} {} – {} {}</text>
-    <text class="subtitle" x="{}" y="150">{} boardings; est. {} services</text>"#, // {} services TODO
+    <text class="subtitle" x="{}" y="150">{} boardings; est. {} services{}</text>"#, // {} services TODO
         doc_width / 2.0,
         route_name,
         direction,
@@ -397,7 +403,8 @@ pub fn visualise_one(
         year,
         doc_width / 2.0,
         boards_count,
-        service_count
+        service_count,
+        ftime_ins
     );
 
     // need to write instead of print, eventually

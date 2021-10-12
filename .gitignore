@@ -3,7 +3,10 @@ env
 envdir
 *.ini
 fluvial_output
-
+data
+experiments
+.DS_Store
+.idea
 
 # Added by cargo
 
