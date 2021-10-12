@@ -60,14 +60,14 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          use-cross: ${{ matrix.job.use-cross " }}
-          toolchain: ${{ matrix.rust " }}
-          args: --release --target ${{ matrix.job.target " }}
+          use-cross: ${{ matrix.job.use-cross }}
+          toolchain: ${{ matrix.rust }}
+          args: --release --target ${{ matrix.job.target }}
 
       - name: install strip command
         shell: bash
         run: |
-          if [[ ${{ matrix.job.target " }} == aarch64-unknown-linux-gnu ]]; then
+          if [[ ${{ matrix.job.target }} == aarch64-unknown-linux-gnu ]]; then
               sudo apt update
               sudo apt-get install -y binutils-aarch64-linux-gnu
           fi
