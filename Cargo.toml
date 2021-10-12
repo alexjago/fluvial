@@ -19,7 +19,7 @@ structopt = "0.3.23"
 ansi-escapes = "0.1.1"
 csv = "1.1.6"
 tempfile = "3.2.0"
-reqwest = { version = "0.11.5", features = ["blocking", "gzip", "brotli", "deflate"] }
+reqwest = { version = "0.11.5", features = ["blocking", "gzip", "brotli", "deflate", "native-tls-vendored"] }
 zip = "0.5.13"
 log = "0.4.14"
 tree_magic_mini = { version = "3.0.2", features = ["tree_magic_db"] }
