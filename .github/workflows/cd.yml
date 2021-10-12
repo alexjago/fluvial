@@ -1,7 +1,6 @@
 name: Continuous Deployment
 
 # slightly modified from https://github.com/rust-github/template
-# simply doesn't have the cargo deployment
 
 on:
   push:
@@ -47,8 +46,9 @@ jobs:
             binary-postfix: ""
             use-cross: true
 
+
     steps:
-      - name: Install Rust toolchain
+      - name: Installing Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -76,7 +76,7 @@ jobs:
         run: |
           cd target/${{ matrix.job.target }}/release
           ####### reduce binary size by removing debug symbols #######
-          BINARY_NAME=fluvial-${{ matrix.job.binary-postfix }}
+          BINARY_NAME=fluvial${{ matrix.job.binary-postfix }}
           if [[ ${{ matrix.job.target }} == aarch64-unknown-linux-gnu ]]; then
             GCC_PREFIX="aarch64-linux-gnu-"
           else
