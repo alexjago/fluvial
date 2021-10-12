@@ -7,12 +7,12 @@ extern crate ansi_escapes;
 extern crate hsluv;
 extern crate structopt;
 
-use rusqlite::{Connection, Result, named_params};
+use rusqlite::{named_params, Connection, Result};
 use structopt::StructOpt;
 use tempfile::{NamedTempFile, TempDir};
 
 use std::collections::BTreeMap;
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 use std::iter::Iterator;
 use std::path::{Path, PathBuf};
 use std::process::exit;
@@ -117,7 +117,7 @@ fn make_one(
     let mut tree: BTreeMap<(i32, i32), i32> = BTreeMap::new();
 
     stmt.query_map(
-        named_params!{
+        named_params! {
             ":route": &route,
             ":direction": &direction,
             ":time": &ftime_sub.as_str(),
@@ -151,7 +151,7 @@ fn get_boardings(
     )?;
 
     stmt.query_row(
-        named_params!{
+        named_params! {
             ":route": &route,
             ":direction": &direction,
             ":origin_stop": &stop_id,
@@ -268,7 +268,7 @@ fn single_month(
     //! Run a single month's worth of processing.
     let now = std::time::Instant::now();
 
-    if !verbose {
+    if *verbose {
         eprintln!("Loading databases...");
     }
 
@@ -282,44 +282,43 @@ fn single_month(
         .clone();
 
     // now for the big mess
-    let mut pat_tmpfile: NamedTempFile;
+    let mut pat_tmpfile: Option<NamedTempFile> = None; // up here for scope reasons
 
     if !Path::new(&infilename).exists() {
         // attempt to download it to a temporary file instead
-        eprintln!("Downloading {:#?}", infilename);
-        pat_tmpfile = NamedTempFile::new().expect("Error creating temporary file");
-        let mut resp = reqwest::blocking::get(infilename.to_str().unwrap())
+        if *verbose {
+            eprintln!("Downloading {:#?}", infilename);
+        }
+        pat_tmpfile = Some(NamedTempFile::new().expect("Error creating temporary file"));
+        let resp = reqwest::blocking::get(infilename.to_str().unwrap())
             .expect("Could not find or download patronage data");
 
-        eprintln!("{:#?}", resp.headers());
-        if resp.headers().contains_key("content-type")
-            && resp
-                .headers()
-                .get("content-type")
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .to_ascii_lowercase()
-                .ends_with("zip")
-        {
+        if *verbose {
+            eprintln!("{:#?}", resp.headers());
+        }
+        
+        let bytes = resp.bytes().unwrap();
+        
+        if tree_magic_mini::match_u8("application/zip", &bytes) {
             // this is a zipfile lol
-            let cur = Cursor::new(resp.bytes().unwrap());
+            let cur = Cursor::new(bytes);
             // Reqwest responses are merely Read, not Seek.. but Cursors are, so maybe this will work
             let mut zippy = zip::ZipArchive::new(cur).expect("Error reading downloaded ZIP");
             for i in 0..zippy.len() {
                 let mut f = zippy.by_index(i).expect("Error unzipping");
-                eprintln!("{}", f.name());
                 if f.name().ends_with(".csv") {
-                    std::io::copy(&mut f, &mut pat_tmpfile).expect("Error storing Patronage CSV");
+                    eprintln!("Extracting: {}", f.name());
+                    std::io::copy(&mut f, &mut pat_tmpfile.as_ref().unwrap())
+                        .expect("Error storing Patronage CSV");
                     break;
                 }
             }
-        } else {
+        } else if tree_magic_mini::match_u8("text/csv", &bytes) {
             // copy and hope
-            resp.copy_to(&mut pat_tmpfile)
+            pat_tmpfile.as_ref().unwrap().write_all(&bytes)
                 .expect("Error saving patronage data");
         }
-        infilename = pat_tmpfile.path().to_path_buf();
+        infilename = pat_tmpfile.as_ref().unwrap().path().to_path_buf();
     }
 
     // lack of spaces around = is necessary
@@ -328,8 +327,20 @@ fn single_month(
         infilename.display()
     );
 
-    db.execute_batch(&schema)
-        .expect("Error reading the patronage CSV");
+    match db.execute_batch(&schema) {
+        Ok(_) => {},
+        Err(e) => {
+            eprintln!("Error reading the patronage CSV:");
+            eprintln!("{}", e);
+            eprintln!("Skipping this month.");
+            if (&pat_tmpfile).is_some() {
+                let _mv = pat_tmpfile.unwrap().persist("./error.csv")
+                    .expect("Error persisting CSV for inspection");
+                eprintln!("Inspect the erroneous CSV at\n./error.csv");
+            }
+            return;
+        }   
+    }
 
     let schema = "CREATE TABLE Patronage(operator TEXT, month TEXT, route TEXT, direction TEXT, time TEXT, ticket_type TEXT, origin_stop INTEGER, destination_stop INTEGER, quantity INTEGER);";
 
@@ -343,11 +354,15 @@ fn single_month(
             if *verbose {
                 eprintln!("Info: successfully loaded the patronage CSV as a database.")
             }
+        },
+        Err(e) => {
+            eprintln!(
+                "Error: read the patronage CSV but could not convert the type affinities: {}",
+                e,
+            );
+            eprintln!("Skipping this month.");
+            return;
         }
-        Err(e) => eprintln!(
-            "Error: read the patronage CSV but could not convert the type affinities: {}",
-            e,
-        ),
     }
 
     if *list {
@@ -368,24 +383,23 @@ fn single_month(
         let gtfs_tmpdir: TempDir; // needed for scope
         if !Path::new(gtfs_dir.as_ref().unwrap()).exists() {
             // gotta download the thing
-            eprintln!("Downloading {:#?}", gtfs_dir.as_ref().unwrap());
+            if *verbose {
+                eprintln!("Downloading {:#?}", gtfs_dir.as_ref().unwrap());
+            }
             gtfs_tmpdir = tempfile::tempdir().expect("Could not create temporary GTFS directory");
             let mut tmp_path = gtfs_tmpdir.path().to_path_buf();
 
             let resp = reqwest::blocking::get(gtfs_dir.as_ref().unwrap().to_str().unwrap())
                 .expect("Could not find or download patronage data");
-            eprintln!("{:#?}", resp.headers());
-            if resp.headers().contains_key("content-type")
-                && resp
-                    .headers()
-                    .get("content-type")
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_ascii_lowercase()
-                    .ends_with("zip")
-            {
-                let cur = Cursor::new(resp.bytes().unwrap());
+                
+            if *verbose {
+                eprintln!("{:#?}", resp.headers());            
+            }
+            
+            let bytes = resp.bytes().unwrap();
+            
+            if tree_magic_mini::match_u8("application/zip", &bytes){
+                let cur = Cursor::new(bytes);
                 let mut zippy = zip::ZipArchive::new(cur).expect("Error reading downloaded ZIP");
 
                 for i in 0..zippy.len() {
@@ -396,7 +410,7 @@ fn single_month(
                     tmp_path.pop();
                 }
             } else {
-                eprintln!("Didn't download a GTFS zipfile. Skipping this month.");
+                eprintln!("Didn't download a (GTFS) zipfile. Skipping this month.");
                 return;
             }
             gtfs_actual_dir = tmp_path;
@@ -412,8 +426,8 @@ fn single_month(
                 }
             }
             Err(e) => {
-                eprintln!("Failed to load GTFS from disk. {:?}", e);
-                exit(1)
+                eprintln!("Failed to load GTFS from disk; skipping this month. {:?}", e);
+                return;
             }
         }
 

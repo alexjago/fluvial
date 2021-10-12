@@ -9,19 +9,21 @@ repository = "https://github.com/alexjago/fluvial"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rand = "0.8"
+rand = "0.8.4"
 rust-hsluv = "0.1.4"
-clap = "2.33"
-serde_rusqlite = "0.28"
-serde_derive = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-structopt = "0.3"
-ansi-escapes = "0.1"
-csv = "1.1"
-tempfile = "3.1"
-reqwest = {version = "0.11", features = ["blocking", "gzip", "brotli", "deflate"] }
-zip = "0.5"
+clap = "2.33.3"
+serde_rusqlite = "0.28.0"
+serde_derive = "1.0.130"
+serde = { version = "1.0.130", features = ["derive"] }
+structopt = "0.3.23"
+ansi-escapes = "0.1.1"
+csv = "1.1.6"
+tempfile = "3.2.0"
+reqwest = { version = "0.11.5", features = ["blocking", "gzip", "brotli", "deflate"] }
+zip = "0.5.13"
+log = "0.4.14"
+tree_magic_mini = { version = "3.0.2", features = ["tree_magic_db"] }
 
 [dependencies.rusqlite]
-version = "0.26"
+version = "0.26.0"
 features = ["bundled", "csvtab"]

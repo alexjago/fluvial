@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::iter::Iterator;
 use std::path::PathBuf;
 
-use rusqlite::{Connection, Result, named_params};
+use rusqlite::{named_params, Connection, Result};
 
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
@@ -173,9 +173,8 @@ fn get_gtfs_stop_seqs(
         ORDER BY shape_id, stop_sequence;",
     )?;
 
-    let out =
-        from_rows::<StopSeq>(stmt.query(&[(":route", &route), (":direction", &direction)])?)
-            .collect();
+    let out = from_rows::<StopSeq>(stmt.query(&[(":route", &route), (":direction", &direction)])?)
+        .collect();
     out
 }
 
@@ -190,7 +189,7 @@ fn get_prev_last(
     (SELECT shape_id FROM StopSeqs WHERE route_short_name = :route AND direction_id = :direction AND stop_id = :prev_first);")?;
 
     let maxi: i64 = stmt.query_row(
-        named_params!{
+        named_params! {
             ":route": &route,
             ":direction": &direction,
             ":prev_first": &prev_first,
@@ -202,7 +201,7 @@ fn get_prev_last(
     (SELECT shape_id FROM StopSeqs WHERE route_short_name = :route AND direction_id = :direction AND stop_id = :prev_first);")?;
 
     stmt.query_row(
-        named_params!{
+        named_params! {
             ":maxi": &maxi,
             ":route": &route,
             ":direction": &direction,
@@ -273,9 +272,9 @@ pub fn make_stop_sequence(
             only_firsts.push((*firsts, patronage, *id));
         }
     }
-    all_firsts.sort();
+    all_firsts.sort_unstable();
     all_firsts.reverse();
-    only_firsts.sort();
+    only_firsts.sort_unstable();
     only_firsts.reverse();
 
     let oracle_stop_id = match only_firsts.len() {

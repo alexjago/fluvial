@@ -1,33 +1,34 @@
 name	version	authors	repository	license	license_file	description
 adler	1.0.2	Jonas Schievink <jonasschievink@gmail.com>	https://github.com/jonas-schievink/adler.git	0BSD OR Apache-2.0 OR MIT		A simple clean-room implementation of the Adler-32 checksum
-ahash	0.4.6	Tom Kaitchuck <Tom.Kaitchuck@gmail.com>	https://github.com/tkaitchuck/ahash	Apache-2.0 OR MIT		A non-cryptographic hash function using AES-NI for high performance
+ahash	0.7.5	Tom Kaitchuck <Tom.Kaitchuck@gmail.com>	https://github.com/tkaitchuck/ahash	Apache-2.0 OR MIT		A non-cryptographic hash function using AES-NI for high performance
 alloc-no-stdlib	2.0.3	Daniel Reiter Horn <danielrh@dropbox.com>	https://github.com/dropbox/rust-alloc-no-stdlib	BSD-3-Clause		A dynamic allocator that may be used with or without the stdlib. This allows a package with nostd to allocate memory dynamically and be used either with a custom allocator, items on the stack, or by a package that wishes to simply use Box<>. It also provides options to use calloc or a mutable global variable for pre-zeroed memory
 alloc-stdlib	0.2.1	Daniel Reiter Horn <danielrh@dropbox.com>	https://github.com/dropbox/rust-alloc-no-stdlib	BSD-3-Clause		A dynamic allocator example that may be used with the stdlib
-ansi-escapes	0.1.0	Linus Unnebäck <linus@folkdatorn.se>	https://github.com/LinusU/rust-ansi-escapes	MIT		Ansi escape codes for manipulating the terminal
+ansi-escapes	0.1.1	Linus Unnebäck <linus@folkdatorn.se>	https://github.com/LinusU/rust-ansi-escapes	MIT		Ansi escape codes for manipulating the terminal
 ansi_term	0.11.0	ogham@bsago.me|Ryan Scheel (Havvy) <ryan.havvy@gmail.com>|Josh Triplett <josh@joshtriplett.org>		MIT		Library for ANSI terminal colours and styles (bold, underline)
 async-compression	0.3.8	Wim Looman <wim@nemo157.com>|Allen Bui <fairingrey@gmail.com>	https://github.com/Nemo157/async-compression	Apache-2.0 OR MIT		Adaptors between compression crates and Rust's modern asynchronous IO types.
 atty	0.2.14	softprops <d.tangren@gmail.com>	https://github.com/softprops/atty	MIT		A simple interface for querying atty
 base64	0.13.0	Alice Maz <alice@alicemaz.com>|Marshall Pierce <marshall@mpierce.org>	https://github.com/marshallpierce/rust-base64	Apache-2.0 OR MIT		encodes and decodes base64 as bytes or utf8
-bitflags	1.2.1	The Rust Project Developers	https://github.com/bitflags/bitflags	Apache-2.0 OR MIT		A macro to generate structures which behave like bitflags.
+bitflags	1.3.2	The Rust Project Developers	https://github.com/bitflags/bitflags	Apache-2.0 OR MIT		A macro to generate structures which behave like bitflags.
 brotli	3.3.2	Daniel Reiter Horn <danielrh@dropbox.com>|The Brotli Authors	https://github.com/dropbox/rust-brotli	BSD-3-Clause OR MIT		A brotli compressor and decompressor that with an interface avoiding the rust stdlib. This makes it suitable for embedded devices and kernels. It is designed with a pluggable allocator so that the standard lib's allocator may be employed. The default build also includes a stdlib allocator and stream interface. Disable this with --features=no-stdlib. All included code is safe.
 brotli-decompressor	2.3.2	Daniel Reiter Horn <danielrh@dropbox.com>|The Brotli Authors	https://github.com/dropbox/rust-brotli-decompressor	BSD-3-Clause OR MIT		A brotli decompressor that with an interface avoiding the rust stdlib. This makes it suitable for embedded devices and kernels. It is designed with a pluggable allocator so that the standard lib's allocator may be employed. The default build also includes a stdlib allocator and stream interface. Disable this with --features=no-stdlib. Alternatively, --features=unsafe turns off array bounds checks and memory initialization but provides a safe interface for the caller.  Without adding the --features=unsafe argument, all included code is safe. For compression in addition to this library, download https://github.com/dropbox/rust-brotli
-bstr	0.2.14	Andrew Gallant <jamslam@gmail.com>	https://github.com/BurntSushi/bstr	Apache-2.0 OR MIT		A string type that is not required to be valid UTF-8.
+bstr	0.2.17	Andrew Gallant <jamslam@gmail.com>	https://github.com/BurntSushi/bstr	Apache-2.0 OR MIT		A string type that is not required to be valid UTF-8.
 bumpalo	3.7.1	Nick Fitzgerald <fitzgen@gmail.com>	https://github.com/fitzgen/bumpalo	Apache-2.0 OR MIT		A fast bump allocation arena for Rust.
-byteorder	1.3.4	Andrew Gallant <jamslam@gmail.com>	https://github.com/BurntSushi/byteorder	MIT OR Unlicense		Library for reading/writing numbers in big-endian and little-endian.
+bytecount	0.6.2	Andre Bogus <bogusandre@gmail.de>|Joshua Landau <joshua@landau.ws>	https://github.com/llogiq/bytecount	Apache-2.0 OR MIT		count occurrences of a given byte, or the number of UTF-8 code points, in a byte slice, fast
+byteorder	1.4.3	Andrew Gallant <jamslam@gmail.com>	https://github.com/BurntSushi/byteorder	MIT OR Unlicense		Library for reading/writing numbers in big-endian and little-endian.
 bytes	1.1.0	Carl Lerche <me@carllerche.com>|Sean McArthur <sean@seanmonstar.com>	https://github.com/tokio-rs/bytes	MIT		Types and traits for working with bytes
 bzip2	0.4.3	Alex Crichton <alex@alexcrichton.com>	https://github.com/alexcrichton/bzip2-rs	Apache-2.0 OR MIT		Bindings to libbzip2 for bzip2 compression and decompression exposed as Reader/Writer streams.
 bzip2-sys	0.1.11+1.0.8	Alex Crichton <alex@alexcrichton.com>	https://github.com/alexcrichton/bzip2-rs	Apache-2.0 OR MIT		Bindings to libbzip2 for bzip2 compression and decompression exposed as Reader/Writer streams.
-cfg-if	0.1.10	Alex Crichton <alex@alexcrichton.com>	https://github.com/alexcrichton/cfg-if	Apache-2.0 OR MIT		A macro to ergonomically define an item depending on a large number of #[cfg] parameters. Structured like an if-else chain, the first matching branch is the item that gets emitted.
 cfg-if	1.0.0	Alex Crichton <alex@alexcrichton.com>	https://github.com/alexcrichton/cfg-if	Apache-2.0 OR MIT		A macro to ergonomically define an item depending on a large number of #[cfg] parameters. Structured like an if-else chain, the first matching branch is the item that gets emitted.
 clap	2.33.3	Kevin K. <kbknapp@gmail.com>	https://github.com/clap-rs/clap	MIT		A simple to use, efficient, and full-featured Command Line Argument Parser
 core-foundation	0.9.1	The Servo Project Developers	https://github.com/servo/core-foundation-rs	Apache-2.0 OR MIT		Bindings to Core Foundation for macOS
 core-foundation-sys	0.8.2	The Servo Project Developers	https://github.com/servo/core-foundation-rs	Apache-2.0 OR MIT		Bindings to Core Foundation for macOS
 crc32fast	1.2.1	Sam Rijs <srijs@airpost.net>|Alex Crichton <alex@alexcrichton.com>	https://github.com/srijs/rust-crc32fast	Apache-2.0 OR MIT		Fast, SIMD-accelerated CRC32 (IEEE) checksum computation
-csv	1.1.4	Andrew Gallant <jamslam@gmail.com>	https://github.com/BurntSushi/rust-csv	MIT OR Unlicense		Fast CSV parsing with support for serde.
+csv	1.1.6	Andrew Gallant <jamslam@gmail.com>	https://github.com/BurntSushi/rust-csv	MIT OR Unlicense		Fast CSV parsing with support for serde.
 csv-core	0.1.10	Andrew Gallant <jamslam@gmail.com>	https://github.com/BurntSushi/rust-csv	MIT OR Unlicense		Bare bones CSV parsing with no_std support.
 encoding_rs	0.8.28	Henri Sivonen <hsivonen@hsivonen.fi>	https://github.com/hsivonen/encoding_rs	Apache-2.0 OR MIT		A Gecko-oriented implementation of the Encoding Standard
 fallible-iterator	0.2.0	Steven Fackler <sfackler@gmail.com>	https://github.com/sfackler/rust-fallible-iterator	Apache-2.0 OR MIT		Fallible iterator traits
 fallible-streaming-iterator	0.1.9	Steven Fackler <sfackler@gmail.com>	https://github.com/sfackler/fallible-streaming-iterator	Apache-2.0 OR MIT		Fallible streaming iteration
+fixedbitset	0.4.0	bluss	https://github.com/bluss/fixedbitset	Apache-2.0 OR MIT		FixedBitSet is a simple bitset collection
 flate2	1.0.22	Alex Crichton <alex@alexcrichton.com>|Josh Triplett <josh@joshtriplett.org>	https://github.com/rust-lang/flate2-rs	Apache-2.0 OR MIT		DEFLATE compression and decompression exposed as Read/BufRead/Write streams. Supports miniz_oxide, miniz.c, and multiple zlib implementations. Supports zlib, gzip, and raw deflate streams.
 fluvial	0.3.3	Alex Jago	https://github.com/alexjago/fluvial	GPL-3.0-or-later		Visualise stop-by-stop passenger patronage over routes.
 fnv	1.0.7	Alex Crichton <alex@alexcrichton.com>	https://github.com/servo/rust-fnv	Apache-2.0 OR MIT		Fowler–Noll–Vo hash function
@@ -40,13 +41,12 @@ futures-io	0.3.17	Alex Crichton <alex@alexcrichton.com>	https://github.com/rust-
 futures-sink	0.3.17	Alex Crichton <alex@alexcrichton.com>	https://github.com/rust-lang/futures-rs	Apache-2.0 OR MIT		The asynchronous `Sink` trait for the futures-rs library.
 futures-task	0.3.17	Alex Crichton <alex@alexcrichton.com>	https://github.com/rust-lang/futures-rs	Apache-2.0 OR MIT		Tools for working with tasks.
 futures-util	0.3.17	Alex Crichton <alex@alexcrichton.com>	https://github.com/rust-lang/futures-rs	Apache-2.0 OR MIT		Common utilities and extension traits for the futures-rs library.
-getrandom	0.1.15	The Rand Project Developers	https://github.com/rust-random/getrandom	Apache-2.0 OR MIT		A small cross-platform library for retrieving random data from system source
+getrandom	0.2.3	The Rand Project Developers	https://github.com/rust-random/getrandom	Apache-2.0 OR MIT		A small cross-platform library for retrieving random data from system source
 h2	0.3.6	Carl Lerche <me@carllerche.com>|Sean McArthur <sean@seanmonstar.com>	https://github.com/hyperium/h2	MIT		An HTTP/2.0 client and server
-hashbrown	0.9.1	Amanieu d'Antras <amanieu@gmail.com>	https://github.com/rust-lang/hashbrown	Apache-2.0 OR MIT		A Rust port of Google's SwissTable hash map
 hashbrown	0.11.2	Amanieu d'Antras <amanieu@gmail.com>	https://github.com/rust-lang/hashbrown	Apache-2.0 OR MIT		A Rust port of Google's SwissTable hash map
-hashlink	0.6.0	kyren <kerriganw@gmail.com>	https://github.com/kyren/hashlink	Apache-2.0 OR MIT		HashMap-like containers that hold their key-value pairs in a user controllable order
-heck	0.3.1	Without Boats <woboats@gmail.com>	https://github.com/withoutboats/heck	Apache-2.0 OR MIT		heck is a case conversion library.
-hermit-abi	0.1.17	Stefan Lankes	https://github.com/hermitcore/libhermit-rs	Apache-2.0 OR MIT		hermit-abi is small interface to call functions from the unikernel RustyHermit. It is used to build the target `x86_64-unknown-hermit`.
+hashlink	0.7.0	kyren <kerriganw@gmail.com>	https://github.com/kyren/hashlink	Apache-2.0 OR MIT		HashMap-like containers that hold their key-value pairs in a user controllable order
+heck	0.3.3	Without Boats <woboats@gmail.com>	https://github.com/withoutboats/heck	Apache-2.0 OR MIT		heck is a case conversion library.
+hermit-abi	0.1.19	Stefan Lankes	https://github.com/hermitcore/libhermit-rs	Apache-2.0 OR MIT		hermit-abi is small interface to call functions from the unikernel RustyHermit. It is used to build the target `x86_64-unknown-hermit`.
 http	0.2.5	Alex Crichton <alex@alexcrichton.com>|Carl Lerche <me@carllerche.com>|Sean McArthur <sean@seanmonstar.com>	https://github.com/hyperium/http	Apache-2.0 OR MIT		A set of types for representing HTTP requests and responses.
 http-body	0.4.3	Carl Lerche <me@carllerche.com>|Lucio Franco <luciofranco14@gmail.com>|Sean McArthur <sean@seanmonstar.com>	https://github.com/hyperium/http-body	MIT		Trait representing an asynchronous, streaming, HTTP request or response body.
 httparse	1.5.1	Sean McArthur <sean@seanmonstar.com>	https://github.com/seanmonstar/httparse	Apache-2.0 OR MIT		A tiny, safe, speedy, zero-copy HTTP/1.x parser.
@@ -56,19 +56,21 @@ hyper-tls	0.5.0	Sean McArthur <sean@seanmonstar.com>	https://github.com/hyperium
 idna	0.2.3	The rust-url developers	https://github.com/servo/rust-url/	Apache-2.0 OR MIT		IDNA (Internationalizing Domain Names in Applications) and Punycode.
 indexmap	1.7.0	bluss|Josh Stone <cuviper@gmail.com>	https://github.com/bluss/indexmap	Apache-2.0 OR MIT		A hash table with consistent order and fast iteration.  The indexmap is a hash table where the iteration order of the key-value pairs is independent of the hash values of the keys. It has the usual hash table functionality, it preserves insertion order except after removals, and it allows lookup of its elements by either hash table key or numerical index. A corresponding hash set type is also provided.  This crate was initially published under the name ordermap, but it was renamed to indexmap.
 ipnet	2.3.1	Kris Price <kris@krisprice.nz>	https://github.com/krisprice/ipnet	Apache-2.0 OR MIT		Provides types and useful methods for working with IPv4 and IPv6 network addresses, commonly called IP prefixes. The new `IpNet`, `Ipv4Net`, and `Ipv6Net` types build on the existing `IpAddr`, `Ipv4Addr`, and `Ipv6Addr` types already provided in Rust's standard library and align to their design to stay consistent. The module also provides useful traits that extend `Ipv4Addr` and `Ipv6Addr` with methods for `Add`, `Sub`, `BitAnd`, and `BitOr` operations. The module only uses stable feature so it is guaranteed to compile using the stable toolchain.
-itoa	0.4.6	David Tolnay <dtolnay@gmail.com>	https://github.com/dtolnay/itoa	Apache-2.0 OR MIT		Fast functions for printing integer primitives to an io::Write
+itoa	0.4.8	David Tolnay <dtolnay@gmail.com>	https://github.com/dtolnay/itoa	Apache-2.0 OR MIT		Fast functions for printing integer primitives to an io::Write
 js-sys	0.3.55	The wasm-bindgen Developers	https://github.com/rustwasm/wasm-bindgen/tree/master/crates/js-sys	Apache-2.0 OR MIT		Bindings for all JS global objects and functions in all JS environments like Node.js and browsers, built on `#[wasm_bindgen]` using the `wasm-bindgen` crate.
 lazy_static	1.4.0	Marvin Löbel <loebel.marvin@gmail.com>	https://github.com/rust-lang-nursery/lazy-static.rs	Apache-2.0 OR MIT		A macro for declaring lazily evaluated statics in Rust.
 libc	0.2.103	The Rust Project Developers	https://github.com/rust-lang/libc	Apache-2.0 OR MIT		Raw FFI bindings to platform libraries like libc.
-libsqlite3-sys	0.20.1	The rusqlite developers	https://github.com/rusqlite/rusqlite	MIT		Native bindings to the libsqlite3 library
+libsqlite3-sys	0.23.1	The rusqlite developers	https://github.com/rusqlite/rusqlite	MIT		Native bindings to the libsqlite3 library
 log	0.4.14	The Rust Project Developers	https://github.com/rust-lang/log	Apache-2.0 OR MIT		A lightweight logging facade for Rust
 matches	0.1.9	Simon Sapin <simon.sapin@exyr.org>	https://github.com/SimonSapin/rust-std-candidates	MIT		A macro to evaluate, as a boolean, whether an expression matches a pattern.
-memchr	2.3.4	Andrew Gallant <jamslam@gmail.com>|bluss	https://github.com/BurntSushi/rust-memchr	MIT OR Unlicense		Safe interface to memchr.
+memchr	2.4.1	Andrew Gallant <jamslam@gmail.com>|bluss	https://github.com/BurntSushi/memchr	MIT OR Unlicense		Safe interface to memchr.
 mime	0.3.16	Sean McArthur <sean@seanmonstar.com>	https://github.com/hyperium/mime	Apache-2.0 OR MIT		Strongly Typed Mimes
+minimal-lexical	0.1.4	Alex Huszagh <ahuszagh@gmail.com>	https://github.com/Alexhuszagh/minimal-lexical	Apache-2.0 OR MIT		Fast float parsing conversion routines.
 miniz_oxide	0.4.4	Frommi <daniil.liferenko@gmail.com>|oyvindln <oyvindln@users.noreply.github.com>	https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide	Apache-2.0 OR MIT OR Zlib		DEFLATE compression and decompression library rewritten in Rust based on miniz
 mio	0.7.13	Carl Lerche <me@carllerche.com>|Thomas de Zeeuw <thomasdezeeuw@gmail.com>|Tokio Contributors <team@tokio.rs>	https://github.com/tokio-rs/mio	MIT		Lightweight non-blocking IO
 miow	0.3.7	Alex Crichton <alex@alexcrichton.com>	https://github.com/yoshuawuyts/miow	Apache-2.0 OR MIT		A zero overhead I/O library for Windows, focusing on IOCP and Async I/O abstractions.
 native-tls	0.2.8	Steven Fackler <sfackler@gmail.com>	https://github.com/sfackler/rust-native-tls	Apache-2.0 OR MIT		A wrapper over a platform's native TLS implementation
+nom	7.0.0	contact@geoffroycouprie.com	https://github.com/Geal/nom	MIT		A byte-oriented, zero-copy, parser combinators library
 ntapi	0.3.6	MSxDOS <melcodos@gmail.com>	https://github.com/MSxDOS/ntapi	Apache-2.0 OR MIT		FFI bindings for Native API
 num_cpus	1.13.0	Sean McArthur <sean@seanmonstar.com>	https://github.com/seanmonstar/num_cpus	Apache-2.0 OR MIT		Get the number of CPUs on a machine.
 once_cell	1.8.0	Aleksey Kladov <aleksey.kladov@gmail.com>	https://github.com/matklad/once_cell	Apache-2.0 OR MIT		Single assignment cells and lazy values.
@@ -76,44 +78,45 @@ openssl	0.10.36	Steven Fackler <sfackler@gmail.com>	https://github.com/sfackler/
 openssl-probe	0.1.4	Alex Crichton <alex@alexcrichton.com>	https://github.com/alexcrichton/openssl-probe	Apache-2.0 OR MIT		Tool for helping to find SSL certificate locations on the system for OpenSSL
 openssl-sys	0.9.67	Alex Crichton <alex@alexcrichton.com>|Steven Fackler <sfackler@gmail.com>	https://github.com/sfackler/rust-openssl	MIT		FFI bindings to OpenSSL
 percent-encoding	2.1.0	The rust-url developers	https://github.com/servo/rust-url/	Apache-2.0 OR MIT		Percent encoding and decoding
+petgraph	0.6.0	bluss|mitchmindtree	https://github.com/petgraph/petgraph	Apache-2.0 OR MIT		Graph data structure library. Provides graph types and graph algorithms.
 pin-project-lite	0.2.7	Taiki Endo <te316e89@gmail.com>	https://github.com/taiki-e/pin-project-lite	Apache-2.0 OR MIT		A lightweight version of pin-project written with declarative macros.
 pin-utils	0.1.0	Josef Brandl <mail@josefbrandl.de>	https://github.com/rust-lang-nursery/pin-utils	Apache-2.0 OR MIT		Utilities for pinning
 ppv-lite86	0.2.10	The CryptoCorrosion Contributors	https://github.com/cryptocorrosion/cryptocorrosion	Apache-2.0 OR MIT		Implementation of the crypto-simd API for x86
 proc-macro-error	1.0.4	CreepySkeleton <creepy-skeleton@yandex.ru>	https://gitlab.com/CreepySkeleton/proc-macro-error	Apache-2.0 OR MIT		Almost drop-in replacement to panics in proc-macros
 proc-macro-error-attr	1.0.4	CreepySkeleton <creepy-skeleton@yandex.ru>	https://gitlab.com/CreepySkeleton/proc-macro-error	Apache-2.0 OR MIT		Attribute macro for proc-macro-error crate
 proc-macro2	1.0.29	Alex Crichton <alex@alexcrichton.com>|David Tolnay <dtolnay@gmail.com>	https://github.com/alexcrichton/proc-macro2	Apache-2.0 OR MIT		A substitute implementation of the compiler's `proc_macro` API to decouple token-based libraries from the procedural macro use case.
-quote	1.0.7	David Tolnay <dtolnay@gmail.com>	https://github.com/dtolnay/quote	Apache-2.0 OR MIT		Quasi-quoting macro quote!(...)
-rand	0.7.3	The Rand Project Developers|The Rust Project Developers	https://github.com/rust-random/rand	Apache-2.0 OR MIT		Random number generators and other randomness functionality.
-rand_chacha	0.2.2	The Rand Project Developers|The Rust Project Developers|The CryptoCorrosion Contributors	https://github.com/rust-random/rand	Apache-2.0 OR MIT		ChaCha random number generator
-rand_core	0.5.1	The Rand Project Developers|The Rust Project Developers	https://github.com/rust-random/rand	Apache-2.0 OR MIT		Core random number generator traits and tools for implementation.
-rand_hc	0.2.0	The Rand Project Developers	https://github.com/rust-random/rand	Apache-2.0 OR MIT		HC128 random number generator
-redox_syscall	0.1.57	Jeremy Soller <jackpot51@gmail.com>	https://gitlab.redox-os.org/redox-os/syscall	MIT		A Rust library to access raw Redox system calls
-regex-automata	0.1.9	Andrew Gallant <jamslam@gmail.com>	https://github.com/BurntSushi/regex-automata	MIT OR Unlicense		Automata construction and matching using regular expressions.
+quote	1.0.10	David Tolnay <dtolnay@gmail.com>	https://github.com/dtolnay/quote	Apache-2.0 OR MIT		Quasi-quoting macro quote!(...)
+rand	0.8.4	The Rand Project Developers|The Rust Project Developers	https://github.com/rust-random/rand	Apache-2.0 OR MIT		Random number generators and other randomness functionality.
+rand_chacha	0.3.1	The Rand Project Developers|The Rust Project Developers|The CryptoCorrosion Contributors	https://github.com/rust-random/rand	Apache-2.0 OR MIT		ChaCha random number generator
+rand_core	0.6.3	The Rand Project Developers|The Rust Project Developers	https://github.com/rust-random/rand	Apache-2.0 OR MIT		Core random number generator traits and tools for implementation.
+rand_hc	0.3.1	The Rand Project Developers	https://github.com/rust-random/rand	Apache-2.0 OR MIT		HC128 random number generator
+redox_syscall	0.2.10	Jeremy Soller <jackpot51@gmail.com>	https://gitlab.redox-os.org/redox-os/syscall	MIT		A Rust library to access raw Redox system calls
+regex-automata	0.1.10	Andrew Gallant <jamslam@gmail.com>	https://github.com/BurntSushi/regex-automata	MIT OR Unlicense		Automata construction and matching using regular expressions.
 remove_dir_all	0.5.3	Aaronepower <theaaronepower@gmail.com>	https://github.com/XAMPPRocky/remove_dir_all.git	Apache-2.0 OR MIT		A safe, reliable implementation of remove_dir_all for Windows
 reqwest	0.11.5	Sean McArthur <sean@seanmonstar.com>	https://github.com/seanmonstar/reqwest	Apache-2.0 OR MIT		higher level HTTP client library
-rusqlite	0.24.1	The rusqlite developers	https://github.com/rusqlite/rusqlite	MIT		Ergonomic wrapper for SQLite
+rusqlite	0.26.0	The rusqlite developers	https://github.com/rusqlite/rusqlite	MIT		Ergonomic wrapper for SQLite
 rust-hsluv	0.1.4	David Palm <dvdplm@gmail.com>	https://github.com/dvdplm/rust-hsluv	MIT		Color converstions. Convert to/from various color representations: hex, rgb, hsluv, hpluv, lch and xyz.
 ryu	1.0.5	David Tolnay <dtolnay@gmail.com>	https://github.com/dtolnay/ryu	Apache-2.0 OR BSL-1.0		Fast floating point to string conversion
 schannel	0.1.19	Steven Fackler <sfackler@gmail.com>|Steffen Butzer <steffen.butzer@outlook.com>	https://github.com/steffengy/schannel-rs	MIT		Schannel bindings for rust, allowing SSL/TLS (e.g. https) without openssl
-security-framework	2.3.1	Steven Fackler <sfackler@gmail.com>|Kornel <kornel@geekhood.net>	https://github.com/kornelski/rust-security-framework	Apache-2.0 OR MIT		Security.framework bindings for macOS and iOS
+security-framework	2.4.2	Steven Fackler <sfackler@gmail.com>|Kornel <kornel@geekhood.net>	https://github.com/kornelski/rust-security-framework	Apache-2.0 OR MIT		Security.framework bindings for macOS and iOS
 security-framework-sys	2.4.2	Steven Fackler <sfackler@gmail.com>|Kornel <kornel@geekhood.net>	https://github.com/kornelski/rust-security-framework	Apache-2.0 OR MIT		Apple `Security.framework` low-level FFI bindings
-serde	1.0.117	Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>	https://github.com/serde-rs/serde	Apache-2.0 OR MIT		A generic serialization/deserialization framework
-serde_derive	1.0.117	Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>	https://github.com/serde-rs/serde	Apache-2.0 OR MIT		Macros 1.1 implementation of #[derive(Serialize, Deserialize)]
+serde	1.0.130	Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>	https://github.com/serde-rs/serde	Apache-2.0 OR MIT		A generic serialization/deserialization framework
+serde_derive	1.0.130	Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>	https://github.com/serde-rs/serde	Apache-2.0 OR MIT		Macros 1.1 implementation of #[derive(Serialize, Deserialize)]
 serde_json	1.0.68	Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>	https://github.com/serde-rs/json	Apache-2.0 OR MIT		A JSON serialization file format
-serde_rusqlite	0.26.0	Pro <twisted.fall@gmail.com>	https://github.com/twistedfall/serde_rusqlite	LGPL-3.0		Serialize/deserialize rusqlite rows
+serde_rusqlite	0.28.0	Pro <twisted.fall@gmail.com>	https://github.com/twistedfall/serde_rusqlite	LGPL-3.0		Serialize/deserialize rusqlite rows
 serde_urlencoded	0.7.0	Anthony Ramine <n.oxyde@gmail.com>	https://github.com/nox/serde_urlencoded	Apache-2.0 OR MIT		`x-www-form-urlencoded` meets Serde
 slab	0.4.4	Carl Lerche <me@carllerche.com>	https://github.com/tokio-rs/slab	MIT		Pre-allocated storage for a uniform data type
-smallvec	1.5.0	The Servo Project Developers	https://github.com/servo/rust-smallvec	Apache-2.0 OR MIT		'Small vector' optimization: store up to a small number of items on the stack
+smallvec	1.7.0	The Servo Project Developers	https://github.com/servo/rust-smallvec	Apache-2.0 OR MIT		'Small vector' optimization: store up to a small number of items on the stack
 socket2	0.4.2	Alex Crichton <alex@alexcrichton.com>|Thomas de Zeeuw <thomasdezeeuw@gmail.com>	https://github.com/rust-lang/socket2	Apache-2.0 OR MIT		Utilities for handling networking sockets with a maximal amount of configuration possible intended.
 strsim	0.8.0	Danny Guo <dannyguo91@gmail.com>	https://github.com/dguo/strsim-rs	MIT		Implementations of string similarity metrics. Includes Hamming, Levenshtein, OSA, Damerau-Levenshtein, Jaro, and Jaro-Winkler.
-structopt	0.3.21	Guillaume Pinot <texitoi@texitoi.eu>|others	https://github.com/TeXitoi/structopt	Apache-2.0 OR MIT		Parse command line argument by defining a struct.
-structopt-derive	0.4.14	Guillaume Pinot <texitoi@texitoi.eu>	https://github.com/TeXitoi/structopt	Apache-2.0 OR MIT		Parse command line argument by defining a struct, derive crate.
+structopt	0.3.23	Guillaume Pinot <texitoi@texitoi.eu>|others	https://github.com/TeXitoi/structopt	Apache-2.0 OR MIT		Parse command line argument by defining a struct.
+structopt-derive	0.4.16	Guillaume Pinot <texitoi@texitoi.eu>	https://github.com/TeXitoi/structopt	Apache-2.0 OR MIT		Parse command line argument by defining a struct, derive crate.
 syn	1.0.80	David Tolnay <dtolnay@gmail.com>	https://github.com/dtolnay/syn	Apache-2.0 OR MIT		Parser for Rust source code
-tempfile	3.1.0	Steven Allen <steven@stebalien.com>|The Rust Project Developers|Ashley Mannix <ashleymannix@live.com.au>|Jason White <jasonaw0@gmail.com>	https://github.com/Stebalien/tempfile	Apache-2.0 OR MIT		A library for managing temporary files and directories.
+tempfile	3.2.0	Steven Allen <steven@stebalien.com>|The Rust Project Developers|Ashley Mannix <ashleymannix@live.com.au>|Jason White <jasonaw0@gmail.com>	https://github.com/Stebalien/tempfile	Apache-2.0 OR MIT		A library for managing temporary files and directories.
 textwrap	0.11.0	Martin Geisler <martin@geisler.net>	https://github.com/mgeisler/textwrap	MIT		Textwrap is a small library for word wrapping, indenting, and dedenting strings.  You can use it to format strings (such as help and error messages) for display in commandline applications. It is designed to be efficient and handle Unicode characters correctly.
 thiserror	1.0.30	David Tolnay <dtolnay@gmail.com>	https://github.com/dtolnay/thiserror	Apache-2.0 OR MIT		derive(Error)
 thiserror-impl	1.0.30	David Tolnay <dtolnay@gmail.com>	https://github.com/dtolnay/thiserror	Apache-2.0 OR MIT		Implementation detail of the `thiserror` crate
-time	0.1.44	The Rust Project Developers	https://github.com/time-rs/time	Apache-2.0 OR MIT		Utilities for working with time-related functions in Rust.
+time	0.1.43	The Rust Project Developers	https://github.com/time-rs/time	Apache-2.0 OR MIT		Utilities for working with time-related functions in Rust.
 tinyvec	1.5.0	Lokathor <zefria@gmail.com>	https://github.com/Lokathor/tinyvec	Apache-2.0 OR MIT OR Zlib		`tinyvec` provides 100% safe vec-like data structures.
 tinyvec_macros	0.1.0	Soveu <marx.tomasz@gmail.com>	https://github.com/Soveu/tinyvec_macros	Apache-2.0 OR MIT OR Zlib		Some macros for tiny containers
 tokio	1.12.0	Tokio Contributors <team@tokio.rs>	https://github.com/tokio-rs/tokio	MIT		An event-driven, non-blocking I/O platform for writing asynchronous I/O backed applications.
@@ -122,17 +125,18 @@ tokio-util	0.6.8	Tokio Contributors <team@tokio.rs>	https://github.com/tokio-rs/
 tower-service	0.3.1	Tower Maintainers <team@tower-rs.com>	https://github.com/tower-rs/tower	MIT		Trait representing an asynchronous, request / response based, client or server.
 tracing	0.1.29	Eliza Weisman <eliza@buoyant.io>|Tokio Contributors <team@tokio.rs>	https://github.com/tokio-rs/tracing	MIT		Application-level tracing for Rust.
 tracing-core	0.1.21	Tokio Contributors <team@tokio.rs>	https://github.com/tokio-rs/tracing	MIT		Core primitives for application-level tracing.
+tree_magic_db	3.0.0	Richard Bradfield <bradfier@fstab.me>		GPL-2.0-or-later		Packages the FreeDesktop.org shared MIME database for optional use with tree_magic_mini
+tree_magic_mini	3.0.2	Matt Brubeck <mbrubeck@limpet.net>|Allison Hancock <aahancoc@umich.edu>	https://github.com/mbrubeck/tree_magic/	MIT		Determines the MIME type of a file by traversing a filetype tree.
 try-lock	0.2.3	Sean McArthur <sean@seanmonstar.com>	https://github.com/seanmonstar/try-lock	MIT		A lightweight atomic lock.
 unicode-bidi	0.3.7	The Servo Project Developers	https://github.com/servo/unicode-bidi	Apache-2.0 OR MIT		Implementation of the Unicode Bidirectional Algorithm
 unicode-normalization	0.1.19	kwantam <kwantam@gmail.com>|Manish Goregaokar <manishsmail@gmail.com>	https://github.com/unicode-rs/unicode-normalization	Apache-2.0 OR MIT		This crate provides functions for normalization of Unicode strings, including Canonical and Compatible Decomposition and Recomposition, as described in Unicode Standard Annex #15.
-unicode-segmentation	1.7.1	kwantam <kwantam@gmail.com>|Manish Goregaokar <manishsmail@gmail.com>	https://github.com/unicode-rs/unicode-segmentation	Apache-2.0 OR MIT		This crate provides Grapheme Cluster, Word and Sentence boundaries according to Unicode Standard Annex #29 rules.
-unicode-width	0.1.8	kwantam <kwantam@gmail.com>|Manish Goregaokar <manishsmail@gmail.com>	https://github.com/unicode-rs/unicode-width	Apache-2.0 OR MIT		Determine displayed width of `char` and `str` types according to Unicode Standard Annex #11 rules.
-unicode-xid	0.2.1	erick.tryzelaar <erick.tryzelaar@gmail.com>|kwantam <kwantam@gmail.com>	https://github.com/unicode-rs/unicode-xid	Apache-2.0 OR MIT		Determine whether characters have the XID_Start or XID_Continue properties according to Unicode Standard Annex #31.
+unicode-segmentation	1.8.0	kwantam <kwantam@gmail.com>|Manish Goregaokar <manishsmail@gmail.com>	https://github.com/unicode-rs/unicode-segmentation	Apache-2.0 OR MIT		This crate provides Grapheme Cluster, Word and Sentence boundaries according to Unicode Standard Annex #29 rules.
+unicode-width	0.1.9	kwantam <kwantam@gmail.com>|Manish Goregaokar <manishsmail@gmail.com>	https://github.com/unicode-rs/unicode-width	Apache-2.0 OR MIT		Determine displayed width of `char` and `str` types according to Unicode Standard Annex #11 rules.
+unicode-xid	0.2.2	erick.tryzelaar <erick.tryzelaar@gmail.com>|kwantam <kwantam@gmail.com>|Manish Goregaokar <manishsmail@gmail.com>	https://github.com/unicode-rs/unicode-xid	Apache-2.0 OR MIT		Determine whether characters have the XID_Start or XID_Continue properties according to Unicode Standard Annex #31.
 url	2.2.2	The rust-url developers	https://github.com/servo/rust-url	Apache-2.0 OR MIT		URL library for Rust, based on the WHATWG URL Standard
 vec_map	0.8.2	Alex Crichton <alex@alexcrichton.com>|Jorge Aparicio <japaricious@gmail.com>|Alexis Beingessner <a.beingessner@gmail.com>|Brian Anderson <>|tbu- <>|Manish Goregaokar <>|Aaron Turon <aturon@mozilla.com>|Adolfo Ochagavía <>|Niko Matsakis <>|Steven Fackler <>|Chase Southwood <csouth3@illinois.edu>|Eduard Burtescu <>|Florian Wilkens <>|Félix Raimundo <>|Tibor Benke <>|Markus Siemens <markus@m-siemens.de>|Josh Branchaud <jbranchaud@gmail.com>|Huon Wilson <dbau.pp@gmail.com>|Corey Farwell <coref@rwell.org>|Aaron Liblong <>|Nick Cameron <nrc@ncameron.org>|Patrick Walton <pcwalton@mimiga.net>|Felix S Klock II <>|Andrew Paseltiner <apaseltiner@gmail.com>|Sean McArthur <sean.monstar@gmail.com>|Vadim Petrochenkov <>	https://github.com/contain-rs/vec-map	Apache-2.0 OR MIT		A simple map based on a vector for small integer keys
 want	0.3.0	Sean McArthur <sean@seanmonstar.com>	https://github.com/seanmonstar/want	MIT		Detect when another Future wants a result.
-wasi	0.9.0+wasi-snapshot-preview1	The Cranelift Project Developers	https://github.com/bytecodealliance/wasi	Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT		Experimental WASI API bindings for Rust
-wasi	0.10.0+wasi-snapshot-preview1	The Cranelift Project Developers	https://github.com/bytecodealliance/wasi	Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT		Experimental WASI API bindings for Rust
+wasi	0.10.2+wasi-snapshot-preview1	The Cranelift Project Developers	https://github.com/bytecodealliance/wasi	Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT		Experimental WASI API bindings for Rust
 wasm-bindgen	0.2.78	The wasm-bindgen Developers	https://github.com/rustwasm/wasm-bindgen	Apache-2.0 OR MIT		Easy support for interacting between JS and Rust.
 wasm-bindgen-backend	0.2.78	The wasm-bindgen Developers	https://github.com/rustwasm/wasm-bindgen/tree/master/crates/backend	Apache-2.0 OR MIT		Backend code generation of the wasm-bindgen tool
 wasm-bindgen-futures	0.4.28	The wasm-bindgen Developers	https://github.com/rustwasm/wasm-bindgen/tree/master/crates/futures	Apache-2.0 OR MIT		Bridging the gap between Rust Futures and JavaScript Promises
