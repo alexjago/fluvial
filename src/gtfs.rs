@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::iter::Iterator;
 use std::path::PathBuf;
 
-use rusqlite::{Connection, Result};
+use rusqlite::{Connection, Result, named_params};
 
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
@@ -174,7 +174,7 @@ fn get_gtfs_stop_seqs(
     )?;
 
     let out =
-        from_rows::<StopSeq>(stmt.query_named(&[(":route", &route), (":direction", &direction)])?)
+        from_rows::<StopSeq>(stmt.query(&[(":route", &route), (":direction", &direction)])?)
             .collect();
     out
 }
@@ -189,25 +189,25 @@ fn get_prev_last(
     let mut stmt = db.prepare("SELECT MAX(stop_sequence) FROM StopSeqs WHERE shape_id IN 
     (SELECT shape_id FROM StopSeqs WHERE route_short_name = :route AND direction_id = :direction AND stop_id = :prev_first);")?;
 
-    let maxi: i64 = stmt.query_row_named(
-        &[
-            (":route", &route),
-            (":direction", &direction),
-            (":prev_first", &prev_first),
-        ],
+    let maxi: i64 = stmt.query_row(
+        named_params!{
+            ":route": &route,
+            ":direction": &direction,
+            ":prev_first": &prev_first,
+        },
         |row| row.get(0),
     )?;
 
     let mut stmt = db.prepare("SELECT stop_id FROM StopSeqs WHERE stop_sequence = :maxi AND shape_id IN 
     (SELECT shape_id FROM StopSeqs WHERE route_short_name = :route AND direction_id = :direction AND stop_id = :prev_first);")?;
 
-    stmt.query_row_named(
-        &[
-            (":maxi", &maxi),
-            (":route", &route),
-            (":direction", &direction),
-            (":prev_first", &prev_first),
-        ],
+    stmt.query_row(
+        named_params!{
+            ":maxi": &maxi,
+            ":route": &route,
+            ":direction": &direction,
+            ":prev_first": &prev_first,
+        },
         |row| row.get(0),
     )
 }
@@ -311,7 +311,7 @@ pub fn make_stop_sequence(
         // need lat/long of prev_last
         let mut stmt =
             db.prepare("SELECT stop_lat, stop_lon FROM Stops WHERE stop_id = :stop_id;")?;
-        let prev_coords = stmt.query_row_named(&[(":stop_id", &prev_last)], |r| {
+        let prev_coords = stmt.query_row(&[(":stop_id", &prev_last)], |r| {
             Ok((r.get_unwrap(0), r.get_unwrap(1)))
         })?;
 
@@ -323,7 +323,7 @@ pub fn make_stop_sequence(
 
         // iterate over as-yet-unallocated sequence starts and select closest
         for k in &unalloc {
-            let test_coords = stmt.query_row_named(&[(":stop_id", &k)], |r| {
+            let test_coords = stmt.query_row(&[(":stop_id", &k)], |r| {
                 Ok((r.get_unwrap(0), r.get_unwrap(1)))
             })?;
             let test_lat: f64 = test_coords.0;
@@ -462,7 +462,7 @@ pub fn get_stop_names(
     let mut stmt = db.prepare_cached("SELECT stop_name FROM Stops WHERE stop_id = :id")?;
 
     for id in input {
-        let name: String = stmt.query_row_named(&[(":id", &id)], |r| r.get(0))?;
+        let name: String = stmt.query_row(&[(":id", &id)], |r| r.get(0))?;
         output.insert(*id, name);
     }
 
@@ -483,7 +483,7 @@ pub fn get_service_count(
     FROM ServiceCounts WHERE route_short_name = :route AND direction_id = :direction",
     )?;
 
-    let res = from_rows::<ServiceCounts>(stmt.query_named(&[
+    let res = from_rows::<ServiceCounts>(stmt.query(&[
         (":route", &route),
         (":direction", &convert_direction(direction_name)),
     ])?);

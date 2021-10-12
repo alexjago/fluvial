@@ -7,7 +7,7 @@ extern crate ansi_escapes;
 extern crate hsluv;
 extern crate structopt;
 
-use rusqlite::{Connection, Result, NO_PARAMS};
+use rusqlite::{Connection, Result, named_params};
 use structopt::StructOpt;
 use tempfile::{NamedTempFile, TempDir};
 
@@ -78,7 +78,7 @@ fn list_routes(db: &Connection) -> Result<Vec<RouteDir>> {
     let mut rdstmt = db.prepare("SELECT DISTINCT route, direction FROM Patronage;")?;
 
     let mut rd = rdstmt
-        .query_map(NO_PARAMS, |row| Ok((row.get_unwrap(0), row.get_unwrap(1))))?
+        .query_map([], |row| Ok((row.get_unwrap(0), row.get_unwrap(1))))?
         .filter_map(|l| l.ok())
         .collect::<Vec<RouteDir>>();
 
@@ -116,12 +116,12 @@ fn make_one(
 
     let mut tree: BTreeMap<(i32, i32), i32> = BTreeMap::new();
 
-    stmt.query_map_named(
-        &[
-            (":route", &route),
-            (":direction", &direction),
-            (":time", &ftime_sub.as_str()),
-        ],
+    stmt.query_map(
+        named_params!{
+            ":route": &route,
+            ":direction": &direction,
+            ":time": &ftime_sub.as_str(),
+        },
         |row| Ok((row.get(0), row.get(1), row.get(2))),
     )?
     .filter_map(|l| l.ok())
@@ -150,12 +150,12 @@ fn get_boardings(
     WHERE route = :route AND direction = :direction AND origin_stop = :origin_stop;",
     )?;
 
-    stmt.query_row_named(
-        &[
-            (":route", &route),
-            (":direction", &direction),
-            (":origin_stop", &stop_id),
-        ],
+    stmt.query_row(
+        named_params!{
+            ":route": &route,
+            ":direction": &direction,
+            ":origin_stop": &stop_id,
+        },
         |row| row.get(0),
     )
 }
@@ -169,7 +169,7 @@ fn get_month_year(db: &Connection) -> rusqlite::Result<(String, String)> {
     LIMIT    1;",
     )?;
 
-    let raw: String = stmt.query_row(NO_PARAMS, |r| r.get(0))?;
+    let raw: String = stmt.query_row([], |r| r.get(0))?;
 
     let spl: Vec<&str> = raw.splitn(2, '-').collect();
 
@@ -333,12 +333,12 @@ fn single_month(
 
     let schema = "CREATE TABLE Patronage(operator TEXT, month TEXT, route TEXT, direction TEXT, time TEXT, ticket_type TEXT, origin_stop INTEGER, destination_stop INTEGER, quantity INTEGER);";
 
-    db.execute_batch(&schema)
+    db.execute_batch(schema)
         .expect("Failed to create real table.");
 
     let schema = "INSERT INTO Patronage SELECT * FROM PInit;";
 
-    match db.execute_batch(&schema) {
+    match db.execute_batch(schema) {
         Ok(_) => {
             if *verbose {
                 eprintln!("Info: successfully loaded the patronage CSV as a database.")
@@ -456,7 +456,7 @@ fn single_month(
             }
 
             let patronages =
-                make_one(&db, &route, &direction, &ftime).expect("Error collating stop patronage");
+                make_one(&db, &route, &direction, ftime).expect("Error collating stop patronage");
 
             let stop_seq: Vec<i64> = match make_stop_sequence(&db, &route, &direction) {
                 Ok(o) => o,
@@ -493,12 +493,12 @@ fn single_month(
                 service_count,
                 &route,
                 &direction,
-                &ftime,
+                ftime,
                 convert_monthname(&month),
                 &year,
                 *swap,
                 *jumble,
-                &css,
+                css,
             )
             .expect("Error generating SVG");
 
@@ -507,7 +507,7 @@ fn single_month(
                 &format!("{}_{}.svg", route, direction),
                 &month,
                 &year,
-                &ftime,
+                ftime,
                 &out,
             )
             .expect("Error writing SVG file");
@@ -558,7 +558,7 @@ fn single_month(
             }
             index_html.push_str("</table>\n</body>\n</html>");
 
-            write_outfile(&outdir, "index.html", &month, &year, &ftime, &index_html)
+            write_outfile(&outdir, "index.html", &month, &year, ftime, &index_html)
                 .expect("Error writing index");
         }
 
@@ -581,7 +581,7 @@ fn single_month(
 }
 
 fn write_outfile(
-    out_dir: &PathBuf,
+    out_dir: &Path,
     filename: &str,
     month: &str,
     year: &str,
@@ -596,10 +596,10 @@ fn write_outfile(
             ftime
                 .as_ref()
                 .unwrap()
-                .replace(' ', &"_")
-                .replace('(', &"")
-                .replace(')', &"")
-                .replace(':', &""),
+                .replace(' ', "_")
+                .replace('(', "")
+                .replace(')', "")
+                .replace(':', ""),
         );
     }
     std::fs::create_dir_all(&outfile)?;
