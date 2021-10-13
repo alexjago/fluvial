@@ -1,10 +1,10 @@
 /* Simple styling for Fluvial SVG output */
 
 /* for a solid background */
-#bgrect {fill:white; stroke:white}
+.bgrect {fill:#fff; stroke:#fff}
 
 /* General text settings */
-text {font-family: "Source Sans Pro", sans-serif; font-size: 1.3em; fill:black}
+text {font-family: "Source Sans Pro", sans-serif; font-size: 1.3em; fill:#000}
 
 /* .arc defines the connection lines. They will also be coloured
 	programmatically by adding colour classes to the stylesheet. */
@@ -12,18 +12,18 @@ text {font-family: "Source Sans Pro", sans-serif; font-size: 1.3em; fill:black}
 .arc:hover {opacity:1}
 
 /* The bargraphs at the bottom are defined as lines */
-.bargraph {opacity: 0.3; stroke:black; stroke-linecap: butt}
+.bargraph {opacity: 0.3; stroke:#000; stroke-linecap: butt}
 
 /* The text elements are done as overlapped pairs to provide for a keyline.
 	Apply no stroke to the foreground, and ensure that they're the same
 	text size, fonts, etc so they stay aligned. */
 .foreground, .keyline {font-family: "Source Sans Pro Semibold";}
-.keyline {fill: white; stroke:white; stroke-width:0.5em; stroke-linejoin:round; opacity:0.6;}
-.bartxt {font-style: italic; fill:black, text-anchor: middle}
+.keyline {fill: #fff; stroke:#fff; stroke-width:0.5em; stroke-linejoin:round; opacity:0.6;}
+.bartxt {font-style: italic; fill:#000, text-anchor: middle}
 
 /* The line across the middle */
-#mainline {stroke:grey; fill:none; opacity:1; stroke-width:0.6em}
-.markers {fill:white; stroke: grey; stroke-width:0.3em; opacity:1}
+#mainline {stroke:#888; fill:none; opacity:1; stroke-width:0.6em}
+.markers {fill:#fff; stroke: #888; stroke-width:0.3em; opacity:1}
 
 /* Adds title styling */
 .title {font-size: 4em; font-weight: bold; text-anchor: middle}

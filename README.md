@@ -1,5 +1,7 @@
 # Fluvial
 
+[![Continuous Deployment](https://github.com/alexjago/fluvial/actions/workflows/cd.yml/badge.svg)](https://github.com/alexjago/fluvial/actions/workflows/cd.yml)
+
 [*Because transit is like a river.*](https://humantransit.org/2011/02/basics-branching-or-how-transit-is-like-a-river.html)
 
 A program for generating bus route patronage visualisations from origin-destination data.

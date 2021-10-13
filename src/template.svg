@@ -5,6 +5,6 @@
     {}
     ]]>
     </style></defs>
-    <rect height="100%" id="bgrect" width="100%" x="0" y="0" />
+    <rect height="100%" class="bgrect" width="100%" x="0" y="0" />
     {}
 </svg>
