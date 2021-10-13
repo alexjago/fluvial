@@ -174,7 +174,7 @@ pub fn visualise_one(
     let tots_max = (boarding_max + alighting_max) as f64 * SPACE / (BETWEEN - MIN_GAP);
 
     let mut midline = format!(
-        r#"<line id="mainline" x1="{}" x2="{}" y1="{}" y2="{}" />"#,
+        r#"<line class="mainline" x1="{}" x2="{}" y1="{}" y2="{}" />"#,
         EXTRA,
         EXTRA + (stop_count as f64 - 1.0) * BETWEEN,
         main_height,

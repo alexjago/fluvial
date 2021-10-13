@@ -22,7 +22,7 @@ text {font-family: "Source Sans Pro", sans-serif; font-size: 1.3em; fill:#000}
 .bartxt {font-style: italic; fill:#000, text-anchor: middle}
 
 /* The line across the middle */
-#mainline {stroke:#888; fill:none; opacity:1; stroke-width:0.6em}
+.mainline {stroke:#888; fill:none; opacity:1; stroke-width:0.6em}
 .markers {fill:#fff; stroke: #888; stroke-width:0.3em; opacity:1}
 
 /* Adds title styling */
