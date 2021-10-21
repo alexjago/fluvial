@@ -2,7 +2,8 @@
 name = "fluvial"
 version = "0.3.3"
 authors = ["Alex Jago"]
-edition = "2018"
+edition = "2021"
+rust-version = "1.56"
 license = "GPL-3.0-or-later"
 description = "Visualise stop-by-stop passenger patronage over routes."
 repository = "https://github.com/alexjago/fluvial"
