@@ -409,20 +409,10 @@ pub fn visualise_one(
 
     // need to write instead of print, eventually
     Ok(format!(
-        r#"<?xml version="1.0" encoding="utf-8" ?>
-<svg baseProfile="full" height="100%" version="1.1" width="100%" viewBox="0 0 {} {}"
-     xmlns="http://www.w3.org/2000/svg">
-    <defs><style type="text/css"><![CDATA[
-    {}]]>
-    </style></defs>
-    <rect height="100%" id="bgrect" width="100%" x="0" y="0" />
-    {}
-    {}
-    {}
-    {}
-    {}
-    {}
-</svg>"#,
+        // glorious hack: include_str! is eagerly evaluated
+        include_str!("template.svg"),
         doc_width, doc_height, css, paths_rev, paths_fwd, labels, bargraph, midline, title
     ))
 }
+
+*/
