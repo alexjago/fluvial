@@ -24,7 +24,7 @@ log = "0.4.14"
 tree_magic_mini = { version = "3.0.2", features = ["tree_magic_db"] }
 
 [dependencies.rusqlite]
-version = "0.26.0"
+version = "0.26.2"
 features = ["bundled", "csvtab"]
 
 [dependencies.reqwest]
