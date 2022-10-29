@@ -117,12 +117,12 @@ fn make_css(
         false => colour_list(stop_count),
     };
     // put colours into CSS
-    for k in 0..stop_count {
+    for (k, colour) in colours.iter().enumerate().take(stop_count) {
         let colour_by = match swap_colours {
             true => "t",
             false => "f",
         };
-        css.push_str(&format!(".{}{} {{stroke: {}}}\n", colour_by, k, colours[k]));
+        css.push_str(&format!(".{}{} {{stroke: {}}}\n", colour_by, k, colour));
     }
 
     Ok(css)
@@ -361,10 +361,11 @@ pub fn visualise_one(
         );
         bargraph.push_str(&bar);
 
-        let mut loopy = "";
-        if from_idx + 1 == stop_count {
-            loopy = "&#8634; ";
-        }
+        let loopy = match from_idx + 1 == stop_count {
+            // anticlockwise open circle arrow
+            true => "&#8634; ",
+            false => "",
+        };
 
         for t_c in ["keyline", "foreground"].iter() {
             let bt = format!(
@@ -407,12 +408,9 @@ pub fn visualise_one(
         ftime_ins
     );
 
-    // need to write instead of print, eventually
     Ok(format!(
         // glorious hack: include_str! is eagerly evaluated
         include_str!("template.svg"),
         doc_width, doc_height, css, paths_rev, paths_fwd, labels, bargraph, midline, title
     ))
 }
-
-*/

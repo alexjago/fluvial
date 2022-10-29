@@ -86,7 +86,7 @@ fn list_routes(db: &Connection) -> Result<Vec<RouteDir>> {
 
     Ok(rd)
 }
-
+#[inline(never)]
 fn make_one(
     db: &Connection,
     route: &str,
@@ -95,9 +95,14 @@ fn make_one(
 ) -> Result<BTreeMap<(i32, i32), i32>> {
     //! Get a mapping of {(origin, destination) : patronage} for a **single** route/direction pair.
 
+    // This function is responsible for half the CPU-time as of v0.3.3. Tread carefully.
+    // The #[inline(never)] is removable when not profiling
+    // According to the flamegraph almost all the time is spent down in SQLite proper
+    // So the Rust-side code is probably fine.
+
     // The time filtering is a bit wacky. Something like `time IS *` in a WHERE clause isn't allowed
     // but it *is* OK to do `((time IS ...) OR (1=1))`. The rest of the madness is just to
-    // ensure that we always pass one parameter for :time on line 118 and to handle --ftime NULL
+    // ensure that we always pass one parameter for :time and to handle --ftime NULL
 
     let ftime_ins = match ftime {
         Some(_) => String::from("AND (time IS :time)"),
@@ -134,6 +139,7 @@ fn make_one(
     Ok(tree)
 }
 
+#[inline(never)]
 fn get_boardings(
     // used in gtfs.rs for stop sequencing
     db: &Connection,
@@ -296,9 +302,9 @@ fn single_month(
         if *verbose {
             eprintln!("{:#?}", resp.headers());
         }
-        
+
         let bytes = resp.bytes().unwrap();
-        
+
         if tree_magic_mini::match_u8("application/zip", &bytes) {
             // this is a zipfile lol
             let cur = Cursor::new(bytes);
@@ -315,11 +321,16 @@ fn single_month(
             }
         } else if tree_magic_mini::match_u8("text/csv", &bytes) {
             // copy and hope
-            pat_tmpfile.as_ref().unwrap().write_all(&bytes)
+            pat_tmpfile
+                .as_ref()
+                .unwrap()
+                .write_all(&bytes)
                 .expect("Error saving patronage data");
         }
         infilename = pat_tmpfile.as_ref().unwrap().path().to_path_buf();
     }
+
+    let pre_patronage_load_time = std::time::Instant::now();
 
     // lack of spaces around = is necessary
     let schema = format!(
@@ -328,18 +339,20 @@ fn single_month(
     );
 
     match db.execute_batch(&schema) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
             eprintln!("Error reading the patronage CSV:");
             eprintln!("{}", e);
             eprintln!("Skipping this month.");
             if (&pat_tmpfile).is_some() {
-                let _mv = pat_tmpfile.unwrap().persist("./error.csv")
+                let _mv = pat_tmpfile
+                    .unwrap()
+                    .persist("./error.csv")
                     .expect("Error persisting CSV for inspection");
                 eprintln!("Inspect the erroneous CSV at\n./error.csv");
             }
             return;
-        }   
+        }
     }
 
     let schema = "CREATE TABLE Patronage(operator TEXT, month TEXT, route TEXT, direction TEXT, time TEXT, ticket_type TEXT, origin_stop INTEGER, destination_stop INTEGER, quantity INTEGER);";
@@ -352,9 +365,12 @@ fn single_month(
     match db.execute_batch(schema) {
         Ok(_) => {
             if *verbose {
-                eprintln!("Info: successfully loaded the patronage CSV as a database.")
+                eprintln!(
+                    "Info: successfully loaded the patronage CSV as a database in {} seconds.",
+                    pre_patronage_load_time.elapsed().as_secs()
+                )
             }
-        },
+        }
         Err(e) => {
             eprintln!(
                 "Error: read the patronage CSV but could not convert the type affinities: {}",
@@ -363,6 +379,21 @@ fn single_month(
             eprintln!("Skipping this month.");
             return;
         }
+    }
+
+    
+    // Prep an index. This alone practically halved the runtime when added. 
+    match db.execute_batch("CREATE INDEX idx_patronage_routedir on Patronage(route, direction);") {
+        Err(e) => eprintln!("Warning: error creating index on patronage database; performance may be degraded\n{}", e),
+        _ => ()
+    }
+    
+
+    if *verbose {
+        eprintln!(
+            "Loaded patronage CSV in {}s (possibly after downloading)",
+            pre_patronage_load_time.elapsed().as_secs()
+        )
     }
 
     if *list {
@@ -391,14 +422,14 @@ fn single_month(
 
             let resp = reqwest::blocking::get(gtfs_dir.as_ref().unwrap().to_str().unwrap())
                 .expect("Could not find or download patronage data");
-                
+
             if *verbose {
-                eprintln!("{:#?}", resp.headers());            
+                eprintln!("{:#?}", resp.headers());
             }
-            
+
             let bytes = resp.bytes().unwrap();
-            
-            if tree_magic_mini::match_u8("application/zip", &bytes){
+
+            if tree_magic_mini::match_u8("application/zip", &bytes) {
                 let cur = Cursor::new(bytes);
                 let mut zippy = zip::ZipArchive::new(cur).expect("Error reading downloaded ZIP");
 
@@ -426,7 +457,10 @@ fn single_month(
                 }
             }
             Err(e) => {
-                eprintln!("Failed to load GTFS from disk; skipping this month. {:?}", e);
+                eprintln!(
+                    "Failed to load GTFS from disk; skipping this month. {:?}",
+                    e
+                );
                 return;
             }
         }

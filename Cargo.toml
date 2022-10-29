@@ -37,3 +37,7 @@ default-features = false
 features = ["deflate"]
 # we aren't using the 'time' feature anyway and
 # cargo-audit says that dependency is insecure
+
+[profile.release]
+# comment out if not flamegraphing
+debug = true
