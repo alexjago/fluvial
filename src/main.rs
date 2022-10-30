@@ -381,13 +381,14 @@ fn single_month(
         }
     }
 
-    
-    // Prep an index. This alone practically halved the runtime when added. 
+    // Prep an index. This alone practically halved the runtime when added.
     match db.execute_batch("CREATE INDEX idx_patronage_routedir on Patronage(route, direction);") {
-        Err(e) => eprintln!("Warning: error creating index on patronage database; performance may be degraded\n{}", e),
-        _ => ()
+        Err(e) => eprintln!(
+            "Warning: error creating index on patronage database; performance may be degraded\n{}",
+            e
+        ),
+        _ => (),
     }
-    
 
     if *verbose {
         eprintln!(

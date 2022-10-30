@@ -37,7 +37,7 @@ struct FirstLastSeq {
     last: i64,
     shape_id: String,
     len: i64,
-    qty: i64
+    qty: i64,
 }
 
 pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Error> {
@@ -197,19 +197,19 @@ fn get_gtfs_first_lasts(
     route: &str,
     direction: &str,
 ) -> Result<Vec<FirstLastSeq>, serde_rusqlite::Error> {
-let mut stmt = db.prepare(
+    let mut stmt = db.prepare(
         "SELECT A.stop_id as first, B.stop_id as last, A.shape_id, B.stop_sequence as len, A.qty
         FROM StopSeqs A, StopSeqs B 
         WHERE A.stop_sequence = 1 AND A.shape_id = B.shape_id 
         AND A.route_short_name IS :route AND A.direction_id IS :direction
-        GROUP BY A.shape_id HAVING MAX(B.stop_sequence) ORDER BY A.stop_id;"
+        GROUP BY A.shape_id HAVING MAX(B.stop_sequence) ORDER BY A.stop_id;",
     )?;
 
-    let out = from_rows::<FirstLastSeq>(stmt.query(&[(":route", &route), (":direction", &direction)])?)
-        .collect();
+    let out =
+        from_rows::<FirstLastSeq>(stmt.query(&[(":route", &route), (":direction", &direction)])?)
+            .collect();
     out
 }
-
 
 #[inline(never)]
 pub fn make_stop_sequence(
@@ -218,13 +218,13 @@ pub fn make_stop_sequence(
     direction_name: &str,
 ) -> Result<Vec<i64>, serde_rusqlite::Error> {
     //! Creates a route-ordered list of `stop_id`s for a given route/direction.
-    
+
     /* This task is actually rather complicated:
-    
+
       * We commence with a number of of different paths which represent an individual services' run
         * (These are paths in the sense that they're a sequence of discrete points)
       * These paths are ordered within themselves but other than that they can do anything
-        * some might be subsequences of another, 
+        * some might be subsequences of another,
         * some might have some parts in common but others conflicting,
         * some might end with anothers' start...
       * We will attempt to adhere to a loose topological ordering here:
@@ -305,7 +305,7 @@ pub fn make_stop_sequence(
     //     println!("\n\nStarting stop_id: {:?}", oracle_stop_id);
 
     // We have a good, but not great, consideration ordering of stop sequences
-    // *Extremely* cheeky solution: go by physical closeness to last stop  
+    // *Extremely* cheeky solution: go by physical closeness to last stop
 
     // collate as-yet unallocated sequence starts
     let mut unalloc: HashSet<i64> = all_firsts
@@ -320,9 +320,9 @@ pub fn make_stop_sequence(
         .collect();
     let mut final_order: Vec<i64> = Vec::with_capacity(all_firsts.len());
     let mut prev_first: i64 = oracle_stop_id;
-    
+
     // get a lookup table of first and last stop_ids pre-sorted by first
-    let first_last_rows : Vec<FirstLastSeq> = match get_gtfs_first_lasts(db, route, direction) {
+    let first_last_rows: Vec<FirstLastSeq> = match get_gtfs_first_lasts(db, route, direction) {
         Ok(o) => o,
         Err(e) => return Err(e),
     };
@@ -336,7 +336,9 @@ pub fn make_stop_sequence(
     for _ in 0..all_firsts.len() {
         final_order.push(prev_first);
 
-        let prev_idx = first_last_rows.binary_search_by_key(&prev_first, |x| x.first).unwrap();
+        let prev_idx = first_last_rows
+            .binary_search_by_key(&prev_first, |x| x.first)
+            .unwrap();
         let prev_last = first_last_rows[prev_idx].last;
 
         // need lat/long of prev_last
