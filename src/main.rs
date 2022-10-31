@@ -382,20 +382,21 @@ fn single_month(
     }
 
     // Prep an index. This alone practically halved the runtime when added.
-    match db.execute_batch("CREATE INDEX idx_patronage_routedir on Patronage(route, direction);") {
-        Err(e) => eprintln!(
+    if let Err(e) =
+        db.execute_batch("CREATE INDEX idx_patronage_routedir on Patronage(route, direction);")
+    {
+        eprintln!(
             "Warning: error creating index on patronage database; performance may be degraded\n{}",
             e
-        ),
-        _ => (),
-    }
-
-    if *verbose {
-        eprintln!(
-            "Loaded patronage CSV in {}s (possibly after downloading)",
-            pre_patronage_load_time.elapsed().as_secs()
         )
     }
+
+    // if *verbose {
+    eprintln!(
+        "Loaded patronage CSV in {}s (possibly after downloading)",
+        pre_patronage_load_time.elapsed().as_secs()
+    );
+    // }
 
     if *list {
         match list_routes(&db) {
@@ -450,12 +451,12 @@ fn single_month(
 
         match load_gtfs(&db, gtfs_actual_dir) {
             Ok(_) => {
-                if *verbose {
-                    eprintln!(
-                        "Info: successfully loaded GTFS data as a database in {} seconds.",
-                        now.elapsed().as_secs()
-                    )
-                }
+                // if *verbose {
+                eprintln!(
+                    "Info: successfully loaded GTFS data as a database in {} seconds.\n\n",
+                    now.elapsed().as_secs()
+                )
+                // }
             }
             Err(e) => {
                 eprintln!(

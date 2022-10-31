@@ -35,8 +35,7 @@ features = ["blocking", "gzip", "brotli", "deflate", "native-tls-vendored"]
 version = "0.5.13"
 default-features = false
 features = ["deflate"]
-# we aren't using the 'time' feature anyway and
-# cargo-audit says that dependency is insecure
+# we aren't using the 'time' feature anyway and cargo-audit says that dependency is insecure
 
 [profile.release]
 # comment out if not flamegraphing

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::iter::Iterator;
 use std::path::PathBuf;
 
-use rusqlite::{named_params, Connection, Result};
+use rusqlite::{Connection, Result};
 
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::*;
@@ -42,6 +42,7 @@ struct FirstLastSeq {
 
 pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Error> {
     //! Loads all the GTFS CSVs into SQLite tables in `db`
+    let now = std::time::Instant::now();
 
     for (t, p) in [
         ("Calendar", "calendar.txt"),
@@ -69,22 +70,50 @@ pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Erro
         //         db.execute_batch(&schema)?;
     }
 
+    eprintln!(
+        "Info: GTFS virtual tables at {} ms.",
+        now.elapsed().as_millis()
+    );
+
     // pre-creating tables is what makes this perform at a reasonable speed
     db.execute_batch("CREATE TABLE Calendar AS SELECT * FROM Calendar_VIRT;")?;
-    db.execute_batch("CREATE TABLE Routes AS SELECT * FROM Routes_VIRT;")?;
+
+    db.execute_batch("CREATE TABLE Routes (route_id TEXT PRIMARY KEY, route_short_name TEXT);")?;
+    db.execute_batch(
+        "INSERT INTO Routes (route_id, route_short_name)
+    SELECT route_id, route_short_name FROM Routes_VIRT;",
+    )?;
+
     db.execute_batch(
         "CREATE TABLE Stops (stop_id INT PRIMARY KEY, stop_name TEXT, stop_lat REAL, stop_lon REAL);",
     )?;
     db.execute_batch(
-        "INSERT INTO Stops (stop_id, stop_name, stop_lat, stop_lon) SELECT stop_id, stop_name, stop_lat, stop_lon FROM Stops_VIRT;",
+        "INSERT INTO Stops (stop_id, stop_name, stop_lat, stop_lon) SELECT stop_id, stop_name, stop_lat, stop_lon FROM Stops_VIRT;")?;
+    // Pretty much all of Trips is stringly-typed but we still want a PK
+    db.execute_batch("CREATE TABLE Trips (route_id TEXT,  service_id TEXT, trip_id TEXT PRIMARY KEY, direction_id TEXT, shape_id TEXT, 
+        FOREIGN KEY(route_id) REFERENCES Routes(route_id));")?;
+    db.execute_batch(
+        "INSERT INTO Trips (route_id, trip_id, direction_id, shape_id)
+    SELECT route_id, trip_id, direction_id, shape_id FROM Trips_VIRT;",
     )?;
-    db.execute_batch("CREATE TABLE Trips AS SELECT * FROM Trips_VIRT;")?;
+
     // Let's try doing type affinity conversions for the big boi
-    db.execute_batch("CREATE TABLE StopTimes (trip_id TEXT, stop_id INT, stop_sequence INT);")?;
+    db.execute_batch(
+        "CREATE TABLE StopTimes (trip_id TEXT, stop_id INT, stop_sequence INT, 
+        FOREIGN KEY (trip_id) REFERENCES Trips(trip_id), 
+        FOREIGN KEY (stop_id) REFERENCES Stops(stop_id) 
+        );",
+    )?;
     db.execute_batch(
         "INSERT INTO StopTimes (trip_id, stop_id, stop_sequence)
     SELECT trip_id, stop_id, stop_sequence FROM StopTimes_VIRT;",
     )?;
+
+    // usually about 2 seconds out of 10 total here
+    eprintln!(
+        "Info: GTFS actual tables at {} ms.",
+        now.elapsed().as_millis()
+    );
 
     // Also create some helper views
 
@@ -117,11 +146,20 @@ pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Erro
         GROUP BY stop_id, stop_sequence, direction_id, route_short_name, shape_id;",
     )?;
 
-    // pre-chewing this table in particular makes subsequent queries lightning-fast
+    // pre-chewing this table in particular makes subsequent queries much faster
+    // SQLite doesn't have materialized views, so this is effectively that
+    // as we should be read-only once load_gtfs returns
     db.execute_batch("CREATE TABLE StopSeqs AS SELECT * FROM SSI;")?;
+    // However this alone takes almost half the runtime now
+
     // And indexing it makes things faster still:
     db.execute_batch("CREATE INDEX ss_routedir ON StopSeqs(route_short_name, direction_id);")?;
     db.execute_batch("CREATE INDEX ss_shapeid ON StopSeqs(shape_id);")?;
+
+    eprintln!(
+        "Info: GTFS StopSeqs and indexes at {} ms.",
+        now.elapsed().as_millis()
+    );
 
     // Now we are preparing to approximate service levels
     // GTFS is built around the concept of a service day; StopTimes only has times, not dates
@@ -149,6 +187,8 @@ FROM RTF INNER JOIN Calendar on Calendar.service_id = RTF.service_id;")?;
     // pre-chew everything again
     db.execute_batch("CREATE TABLE ServiceCounts (route_short_name TEXT, direction_id TEXT, freq INTEGER, monday INTEGER, tuesday INTEGER, wednesday INTEGER, thursday INTEGER, friday INTEGER, saturday INTEGER, sunday INTEGER);")?;
     db.execute_batch("INSERT INTO ServiceCounts SELECT * FROM SDI;")?;
+
+    eprintln!("Info: GTFS done at {} ms.", now.elapsed().as_millis());
 
     Ok(())
 }
