@@ -40,9 +40,11 @@ struct FirstLastSeq {
     qty: i64,
 }
 
-pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Error> {
+pub fn load_gtfs(db: &Connection, gtfs_dir: &Path) -> Result<(), rusqlite::Error> {
     //! Loads all the GTFS CSVs into SQLite tables in `db`
-    let now = std::time::Instant::now();
+    // let now = std::time::Instant::now();
+
+    let mut dir: PathBuf = PathBuf::from(gtfs_dir);
 
     for (t, p) in [
         ("Calendar", "calendar.txt"),
@@ -70,10 +72,10 @@ pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Erro
         //         db.execute_batch(&schema)?;
     }
 
-    eprintln!(
-        "Info: GTFS virtual tables at {} ms.",
-        now.elapsed().as_millis()
-    );
+    // eprintln!(
+    //     "Info: GTFS virtual tables at {} ms.",
+    //     now.elapsed().as_millis()
+    // );
 
     // pre-creating tables is what makes this perform at a reasonable speed
     db.execute_batch("CREATE TABLE Calendar AS SELECT * FROM Calendar_VIRT;")?;
@@ -93,58 +95,74 @@ pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Erro
     db.execute_batch("CREATE TABLE Trips (route_id TEXT,  service_id TEXT, trip_id TEXT PRIMARY KEY, direction_id TEXT, shape_id TEXT, 
         FOREIGN KEY(route_id) REFERENCES Routes(route_id));")?;
     db.execute_batch(
-        "INSERT INTO Trips (route_id, trip_id, direction_id, shape_id)
-    SELECT route_id, trip_id, direction_id, shape_id FROM Trips_VIRT;",
+        "INSERT INTO Trips (route_id, service_id, trip_id, direction_id, shape_id)
+        SELECT route_id, service_id, trip_id, direction_id, shape_id FROM Trips_VIRT;",
     )?;
 
     // Let's try doing type affinity conversions for the big boi
-    db.execute_batch(
-        "CREATE TABLE StopTimes (trip_id TEXT, stop_id INT, stop_sequence INT, 
-        FOREIGN KEY (trip_id) REFERENCES Trips(trip_id), 
-        FOREIGN KEY (stop_id) REFERENCES Stops(stop_id) 
-        );",
-    )?;
+
+    // Experiment: if it's a covering index why not just create it on the virtual table?
+    // Result: Virtual tables can't be indexed.
+    // Experiment: if we can create the table with a primary key in the first place, maybe we can save a scan later?
+    // Result: No. Faster to populate the table and create the index after. No FKs either.
+    //      (It does take up way more memory though.)
+    db.execute_batch("CREATE TABLE StopTimes (trip_id TEXT, stop_id INT, stop_sequence INT);")?;
     db.execute_batch(
         "INSERT INTO StopTimes (trip_id, stop_id, stop_sequence)
     SELECT trip_id, stop_id, stop_sequence FROM StopTimes_VIRT;",
     )?;
+    db.execute_batch("CREATE INDEX idx_stoptimes ON StopTimes(trip_id, stop_id, stop_sequence)")?;
 
-    // usually about 2 seconds out of 10 total here
-    eprintln!(
-        "Info: GTFS actual tables at {} ms.",
-        now.elapsed().as_millis()
-    );
+    // eprintln!(
+    //     "Info: GTFS actual tables (incl. StopTimes index) at {} ms.",
+    //     now.elapsed().as_millis()
+    // );
 
     // Also create some helper views
+    /*
+        db.execute_batch(
+            "CREATE VIEW TripSeqs AS
+            SELECT StopTimes.stop_id, StopTimes.stop_sequence, Trips.direction_id, Trips.route_id, Trips.shape_id
+            FROM StopTimes
+            INNER JOIN Trips on StopTimes.trip_id = Trips.trip_id;",
+        )?;
 
-    db.execute_batch(
-        "CREATE VIEW TripSeqs AS
-        SELECT StopTimes.stop_id, StopTimes.stop_sequence, Trips.direction_id, Trips.route_id, Trips.shape_id
-        FROM StopTimes
-        INNER JOIN Trips on StopTimes.trip_id = Trips.trip_id;",
-    )?;
+        db.execute_batch(
+            "CREATE VIEW TripSeqCounts(stop_id, stop_sequence, direction_id, route_id, shape_id, qty)
+            AS SELECT stop_id, stop_sequence, direction_id, route_id, shape_id, Count(*)
+            FROM TripSeqs
+            GROUP BY stop_id, stop_sequence, direction_id, route_id, shape_id;",
+        )?;
 
-    db.execute_batch(
-        "CREATE VIEW TripSeqCounts(stop_id, stop_sequence, direction_id, route_id, shape_id, qty)
-        AS SELECT stop_id, stop_sequence, direction_id, route_id, shape_id, Count(*)
-        FROM TripSeqs
-        GROUP BY stop_id, stop_sequence, direction_id, route_id, shape_id;",
-    )?;
+        // unfortunately different route variations have the SAME route_id
+        // see e.g. the 397 Inbound
+        // so we have to use shape_id, which is a bit hacky
 
-    // unfortunately different route variations have the SAME route_id
-    // see e.g. the 397 Inbound
-    // so we have to use shape_id, which is a bit hacky
+        // basically I just find VIEWS easiest to reason about, so we're creating
+        // an intermediate view SSI, and then the table StopSeqs
 
-    // basically I just find VIEWS easiest to reason about, so we're creating
-    // an intermediate view SSI, and then the table StopSeqs
+        db.execute_batch(
+            "CREATE VIEW SSI (stop_id, stop_sequence, direction_id, route_short_name, shape_id, qty)
+            AS SELECT stop_id, stop_sequence, direction_id, route_short_name, shape_id, SUM(qty)
+            FROM TripSeqCounts
+            INNER JOIN Routes ON TripSeqCounts.route_id = Routes.route_id
+            GROUP BY stop_id, stop_sequence, direction_id, route_short_name, shape_id;",
+        )?;
+    */
 
-    db.execute_batch(
-        "CREATE VIEW SSI (stop_id, stop_sequence, direction_id, route_short_name, shape_id, qty)
-        AS SELECT stop_id, stop_sequence, direction_id, route_short_name, shape_id, SUM(qty)
-        FROM TripSeqCounts
-        INNER JOIN Routes ON TripSeqCounts.route_id = Routes.route_id
-        GROUP BY stop_id, stop_sequence, direction_id, route_short_name, shape_id;",
-    )?;
+    /* *** new way */
+
+    db.execute_batch("CREATE VIEW RSC AS SELECT route_short_name, direction_id, shape_id, count(trip_id) as qty, min(trip_id) as trip_id 
+    FROM Trips INNER JOIN Routes ON Trips.route_id = Routes.route_id 
+    GROUP BY route_short_name, direction_id, shape_id;")?;
+
+    db.execute_batch("CREATE TABLE RouteShapeCounts AS SELECT * FROM RSC;")?;
+
+    db.execute_batch("CREATE VIEW SSI (stop_id, stop_sequence, direction_id, route_short_name, shape_id, qty) AS 
+    select S.stop_id, S.stop_sequence, R.direction_id, R.route_short_name, R.shape_id, R.qty 
+    FROM RouteShapeCounts R, StopTimes S WHERE R.trip_id = S.trip_id;")?;
+
+    /* *** end of new way *** */
 
     // pre-chewing this table in particular makes subsequent queries much faster
     // SQLite doesn't have materialized views, so this is effectively that
@@ -156,10 +174,10 @@ pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Erro
     db.execute_batch("CREATE INDEX ss_routedir ON StopSeqs(route_short_name, direction_id);")?;
     db.execute_batch("CREATE INDEX ss_shapeid ON StopSeqs(shape_id);")?;
 
-    eprintln!(
-        "Info: GTFS StopSeqs and indexes at {} ms.",
-        now.elapsed().as_millis()
-    );
+    // eprintln!(
+    //     "Info: GTFS StopSeqs and indexes at {} ms.",
+    //     now.elapsed().as_millis()
+    // );
 
     // Now we are preparing to approximate service levels
     // GTFS is built around the concept of a service day; StopTimes only has times, not dates
@@ -168,27 +186,49 @@ pub fn load_gtfs(db: &Connection, mut dir: PathBuf) -> Result<(), rusqlite::Erro
     // RTI and then RTF connect route/directions to service_ids...
     db.execute_batch(
         "CREATE VIEW RTI (trip_id, service_id, route_short_name, direction_id)
-    AS SELECT trip_id, service_id, route_short_name, direction_id
-    FROM Trips INNER JOIN Routes ON Routes.route_id = Trips.route_id;",
+        AS SELECT trip_id, service_id, route_short_name, direction_id
+        FROM Trips INNER JOIN Routes ON Routes.route_id = Trips.route_id;",
     )?;
 
     // aggregating over trip_ids..
     db.execute_batch(
         "CREATE VIEW RTF (service_id, route_short_name, direction_id, freq)
-    AS select service_id, route_short_name, direction_id, count(*)
-    FROM RTI GROUP BY service_id, route_short_name, direction_id;",
+        AS select service_id, route_short_name, direction_id, count(*)
+        FROM RTI GROUP BY service_id, route_short_name, direction_id;",
     )?;
 
     // denormalising over service_ids...
     db.execute_batch("CREATE VIEW SDI (route_short_name, direction_id, freq, monday, tuesday, wednesday, thursday, friday, saturday, sunday)
-AS SELECT route_short_name, direction_id, freq, monday, tuesday, wednesday, thursday, friday, saturday, sunday
-FROM RTF INNER JOIN Calendar on Calendar.service_id = RTF.service_id;")?;
+    AS SELECT route_short_name, direction_id, freq, monday, tuesday, wednesday, thursday, friday, saturday, sunday
+    FROM RTF INNER JOIN Calendar on Calendar.service_id = RTF.service_id;")?;
 
     // pre-chew everything again
-    db.execute_batch("CREATE TABLE ServiceCounts (route_short_name TEXT, direction_id TEXT, freq INTEGER, monday INTEGER, tuesday INTEGER, wednesday INTEGER, thursday INTEGER, friday INTEGER, saturday INTEGER, sunday INTEGER);")?;
+    db.execute_batch(
+        "CREATE TABLE ServiceCounts (route_short_name TEXT, direction_id TEXT, freq INTEGER, 
+        monday INTEGER, tuesday INTEGER, wednesday INTEGER, 
+        thursday INTEGER, friday INTEGER, saturday INTEGER, sunday INTEGER);",
+    )?;
     db.execute_batch("INSERT INTO ServiceCounts SELECT * FROM SDI;")?;
 
-    eprintln!("Info: GTFS done at {} ms.", now.elapsed().as_millis());
+    /*
+    let mut stmt = db.prepare("SELECT count(*) from RTI;")?;
+    let servicecounts: i32 = stmt.query_row([], |r| r.get(0))?;
+    eprintln!("Test: RTI view contains {} rows.", servicecounts);
+
+    stmt = db.prepare("SELECT count(*) from RTF;")?;
+    let servicecounts: i32 = stmt.query_row([], |r| r.get(0))?;
+    eprintln!("Test: RTF view contains {} rows.", servicecounts);
+
+    stmt = db.prepare("SELECT count(*) from SDI;")?;
+    let servicecounts: i32 = stmt.query_row([], |r| r.get(0))?;
+    eprintln!("Test: SDI view contains {} rows.", servicecounts);
+
+    stmt = db.prepare("SELECT count(*) from ServiceCounts;")?;
+    let servicecounts: i32 = stmt.query_row([], |r| r.get(0))?;
+    eprintln!("Test: ServiceCounts table contains {} rows.", servicecounts);
+    */
+
+    // eprintln!("Info: GTFS done at {} ms.", now.elapsed().as_millis());
 
     Ok(())
 }
@@ -443,7 +483,7 @@ fn topo_merge(mut input: VecDeque<VecDeque<i64>>) -> Vec<i64> {
     //! * input: a collection of sequences of of stop_ids (in stop_sequence order), one per shape_id  
     //! * output: a single, merged sequence of stop_ids  
 
-    //! ```
+    //! ```text
     //! loop over sequences:    
     //!   loop over contents:  
     //!     pop a stop off the front,
@@ -567,8 +607,13 @@ pub fn get_service_count(
 
     let mut maxes = vec![0_i32; 7];
 
+    // eprintln!("\n{} {}", route, direction_name);
+
     for row in res {
         let r = row?;
+
+        // eprintln!("{:#?}", r);
+
         if r.monday > 0 && maxes[0] < r.freq {
             maxes[0] = r.freq;
         }
@@ -592,6 +637,10 @@ pub fn get_service_count(
         }
     }
 
-    let out: i32 = maxes.iter().sum();
-    Ok((out as f32 * days_per_month(month, year) / 7.0).round() as i32)
+    // BUG: it appears to be the case that the query is returning no rows.
+    // eprintln!("\n\n\n");
+
+    let out: i32 =
+        (maxes.iter().sum::<i32>() as f32 * days_per_month(month, year) / 7.0).round() as i32;
+    Ok(out)
 }

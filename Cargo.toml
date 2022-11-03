@@ -1,6 +1,6 @@
 [package]
 name = "fluvial"
-version = "0.3.3"
+version = "0.3.4"
 authors = ["Alex Jago"]
 edition = "2021"
 rust-version = "1.56"
@@ -22,14 +22,16 @@ csv = "1.1.6"
 tempfile = "3.2.0"
 log = "0.4.14"
 tree_magic_mini = { version = "3.0.2", features = ["tree_magic_db"] }
+ureq = { version = "2.5.0", default-features = false, features = [
+    "gzip",
+    "native-tls",
+] }
+native-tls = "0.2.11"
+anyhow = "1.0.66"
 
 [dependencies.rusqlite]
 version = "0.26.0"
 features = ["bundled", "csvtab"]
-
-[dependencies.reqwest]
-version = "0.11.5"
-features = ["blocking", "gzip", "brotli", "deflate", "native-tls-vendored"]
 
 [dependencies.zip]
 version = "0.5.13"

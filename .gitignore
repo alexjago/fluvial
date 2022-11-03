@@ -1,10 +1,10 @@
 *.svg
-env
-envdir
+/env
+/envdir
 *.ini
-fluvial_output
-data
-experiments
+/fluvial_output
+/data
+/experiments
 .DS_Store
 .idea
 

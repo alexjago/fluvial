@@ -3,16 +3,22 @@
 //! A bit like a Sankey diagram, only a little simpler.
 //! Intended for visualising passenger flows over a route.
 
+// TODO: refactor with proper errors / logging`
+
+#![warn(clippy::pedantic)]
+
 extern crate ansi_escapes;
 extern crate hsluv;
 extern crate structopt;
 
-use rusqlite::{named_params, Connection, Result};
+use anyhow::{anyhow, bail, Context, Result};
+use rusqlite::{named_params, Connection};
 use structopt::StructOpt;
 use tempfile::{NamedTempFile, TempDir};
+use ureq::Agent;
 
 use std::collections::BTreeMap;
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Read, Write};
 use std::iter::Iterator;
 use std::path::{Path, PathBuf};
 use std::process::exit;
@@ -95,11 +101,6 @@ fn make_one(
 ) -> Result<BTreeMap<(i32, i32), i32>> {
     //! Get a mapping of {(origin, destination) : patronage} for a **single** route/direction pair.
 
-    // This function is responsible for half the CPU-time as of v0.3.3. Tread carefully.
-    // The #[inline(never)] is removable when not profiling
-    // According to the flamegraph almost all the time is spent down in SQLite proper
-    // So the Rust-side code is probably fine.
-
     // The time filtering is a bit wacky. Something like `time IS *` in a WHERE clause isn't allowed
     // but it *is* OK to do `((time IS ...) OR (1=1))`. The rest of the madness is just to
     // ensure that we always pass one parameter for :time and to handle --ftime NULL
@@ -117,7 +118,9 @@ fn make_one(
     let stmt_txt = format!("SELECT origin_stop, destination_stop, sum(quantity)
         FROM Patronage WHERE route IS :route AND direction IS :direction {} GROUP BY origin_stop, destination_stop;", ftime_ins);
 
-    let mut stmt = db.prepare(&stmt_txt).expect("Failed preparing statement.");
+    let mut stmt = db
+        .prepare(&stmt_txt)
+        .context("Failed preparing statement.")?;
 
     let mut tree: BTreeMap<(i32, i32), i32> = BTreeMap::new();
 
@@ -182,7 +185,7 @@ fn get_month_year(db: &Connection) -> rusqlite::Result<(String, String)> {
     Ok((String::from(spl[1]), String::from(spl[0])))
 }
 
-fn main() {
+fn main() -> Result<()> {
     let opts = Opts::from_args();
 
     if opts.verbose {
@@ -213,12 +216,12 @@ fn main() {
         // https://www.reddit.com/r/rust/comments/jv3q3e/how_to_select_between_reading_from_a_file_and/gci1mww/
         let path = opts
             .in_file
-            .expect("Please specify a file path '-' for standard input");
+            .context("Please specify a file path '-' for standard input")?;
 
         let batch_stream: Box<dyn std::io::Read + 'static> = if path.as_os_str() == "-" {
             Box::new(std::io::stdin())
         } else {
-            Box::new(std::fs::File::open(&path).expect("Error opening batch file for reading"))
+            Box::new(std::fs::File::open(&path).context("Error opening batch file for reading")?)
         };
 
         let mut rdr = csv::ReaderBuilder::new()
@@ -226,10 +229,10 @@ fn main() {
             .from_reader(batch_stream);
 
         for r in rdr.records().filter_map(|s| s.ok()) {
-            let patronage_uri = PathBuf::from(r.get(0).expect("Missing patronage URI!"));
-            let gtfs_uri = PathBuf::from(r.get(1).expect("Missing GTFS URI!"));
+            let patronage_uri = PathBuf::from(r.get(0).context("Missing patronage URI!")?);
+            let gtfs_uri = PathBuf::from(r.get(1).context("Missing GTFS URI!")?);
 
-            single_month(
+            if let Err(e) = single_month(
                 &opts.verbose,
                 &Some(patronage_uri),
                 &opts.list,
@@ -240,7 +243,9 @@ fn main() {
                 &opts.swap,
                 &opts.jumble,
                 &opts.css,
-            );
+            ) {
+                eprintln!("Skipping this month: {e}");
+            }
         }
     } else {
         // no downloads or anything, just go
@@ -255,8 +260,9 @@ fn main() {
             &opts.swap,
             &opts.jumble,
             &opts.css,
-        );
+        )?;
     }
+    Ok(())
 }
 
 fn single_month(
@@ -270,7 +276,7 @@ fn single_month(
     swap: &bool,
     jumble: &bool,
     css: &Option<PathBuf>,
-) {
+) -> Result<()> {
     //! Run a single month's worth of processing.
     let now = std::time::Instant::now();
 
@@ -278,91 +284,51 @@ fn single_month(
         eprintln!("Loading databases...");
     }
 
-    let db = Connection::open_in_memory().expect("Could not open virtual database");
+    let db = Connection::open_in_memory().context("Could not open virtual database")?;
     rusqlite::vtab::csvtab::load_module(&db)
-        .expect("Could not load CSV module of virtual database");
-
-    let mut infilename = in_file
-        .as_ref()
-        .expect("Patronage CSV not supplied")
-        .clone();
-
-    // now for the big mess
-    let mut pat_tmpfile: Option<NamedTempFile> = None; // up here for scope reasons
-
-    if !Path::new(&infilename).exists() {
-        // attempt to download it to a temporary file instead
-        if *verbose {
-            eprintln!("Downloading {:#?}", infilename);
-        }
-        pat_tmpfile = Some(NamedTempFile::new().expect("Error creating temporary file"));
-        let resp = reqwest::blocking::get(infilename.to_str().unwrap())
-            .expect("Could not find or download patronage data");
-
-        if *verbose {
-            eprintln!("{:#?}", resp.headers());
-        }
-
-        let bytes = resp.bytes().unwrap();
-
-        if tree_magic_mini::match_u8("application/zip", &bytes) {
-            // this is a zipfile lol
-            let cur = Cursor::new(bytes);
-            // Reqwest responses are merely Read, not Seek.. but Cursors are, so maybe this will work
-            let mut zippy = zip::ZipArchive::new(cur).expect("Error reading downloaded ZIP");
-            for i in 0..zippy.len() {
-                let mut f = zippy.by_index(i).expect("Error unzipping");
-                if f.name().ends_with(".csv") {
-                    eprintln!("Extracting: {}", f.name());
-                    std::io::copy(&mut f, &mut pat_tmpfile.as_ref().unwrap())
-                        .expect("Error storing Patronage CSV");
-                    break;
-                }
-            }
-        } else if tree_magic_mini::match_u8("text/csv", &bytes) {
-            // copy and hope
-            pat_tmpfile
-                .as_ref()
-                .unwrap()
-                .write_all(&bytes)
-                .expect("Error saving patronage data");
-        }
-        infilename = pat_tmpfile.as_ref().unwrap().path().to_path_buf();
+        .context("Could not load CSV module of virtual database")?;
+    // Sign up for 512 MB of mmap if we can
+    if let Err(e) = db.pragma_update(None, "mmap_size", 1 << 29) {
+        eprintln!("Warn: mmap unsuccessful; performance may be degraded.\n{e}",);
     }
 
+    let dl_agent = ureq::AgentBuilder::new()
+        .user_agent("fluvial/0.3.4")
+        .tls_connector(std::sync::Arc::new(
+            native_tls::TlsConnector::new().unwrap(),
+        ))
+        .build();
+
     let pre_patronage_load_time = std::time::Instant::now();
+
+    let pat_tmpfile = in_file
+        .as_ref()
+        .filter(|x| !(x.exists()))
+        .map(|x| download_patronage(dl_agent.clone(), x, *verbose).unwrap());
+
+    let infilename: &Path = match pat_tmpfile.as_ref() {
+        Some(x) => x.path(),
+        None => in_file.as_ref().context("Missing patronage CSV")?.as_path(),
+    };
 
     // lack of spaces around = is necessary
     let schema = format!(
         "CREATE VIRTUAL TABLE PInit USING csv(filename='{}', header=YES)",
         infilename.display()
     );
-
-    match db.execute_batch(&schema) {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!("Error reading the patronage CSV:");
-            eprintln!("{}", e);
-            eprintln!("Skipping this month.");
-            if (&pat_tmpfile).is_some() {
-                let _mv = pat_tmpfile
-                    .unwrap()
-                    .persist("./error.csv")
-                    .expect("Error persisting CSV for inspection");
-                eprintln!("Inspect the erroneous CSV at\n./error.csv");
-            }
-            return;
-        }
-    }
+    db.execute_batch(&schema)?;
 
     let schema = "CREATE TABLE Patronage(operator TEXT, month TEXT, route TEXT, direction TEXT, time TEXT, ticket_type TEXT, origin_stop INTEGER, destination_stop INTEGER, quantity INTEGER);";
 
     db.execute_batch(schema)
-        .expect("Failed to create real table.");
+        .context("Failed to create real table.")?;
 
     let schema = "INSERT INTO Patronage SELECT * FROM PInit;";
 
-    match db.execute_batch(schema) {
+    match db
+        .execute_batch(schema)
+        .context("Read the patronage CSV but could not convert the type affinities.")
+    {
         Ok(_) => {
             if *verbose {
                 eprintln!(
@@ -372,12 +338,19 @@ fn single_month(
             }
         }
         Err(e) => {
-            eprintln!(
-                "Error: read the patronage CSV but could not convert the type affinities: {}",
-                e,
-            );
-            eprintln!("Skipping this month.");
-            return;
+            if let Some(t) = pat_tmpfile {
+                if let Err(b) = t
+                    .persist("./error.csv")
+                    .context("Error also while attempting to persist CSV for inspection.")
+                {
+                    // TODO combine with DB execution error too
+                    bail!(anyhow!(e).context(b));
+                } else {
+                    return Err(e).context("Refer to ./error.csv for more info.");
+                }
+            } else {
+                return Err(e);
+            }
         }
     }
 
@@ -391,79 +364,58 @@ fn single_month(
         )
     }
 
-    // if *verbose {
-    eprintln!(
-        "Loaded patronage CSV in {}s (possibly after downloading)",
-        pre_patronage_load_time.elapsed().as_secs()
-    );
-    // }
+    if *verbose {
+        eprintln!(
+            "Loaded patronage CSV in {}s (possibly after downloading)",
+            pre_patronage_load_time.elapsed().as_secs()
+        );
+    }
 
     if *list {
         match list_routes(&db) {
-            Ok(l) => l.iter().for_each(|l| println!("{}\t{}", l.0, l.1)),
-            Err(e) => eprintln!("{}", e),
+            Ok(l) => {
+                l.iter().for_each(|l| println!("{}\t{}", l.0, l.1));
+                Ok(())
+            }
+            Err(e) => bail!(e),
         }
     } else {
         // other info-like options potentially after --list
 
-        // calc/cache GTFS things here
+        // Download GTFS if it doesn't exist
         if *verbose && gtfs_dir.is_some() {
             eprintln!("Loading GTFS. This may take several seconds...");
         }
 
-        // Attempt download if not a local path
-        let mut gtfs_actual_dir = gtfs_dir.as_ref().unwrap().clone();
-        let gtfs_tmpdir: TempDir; // needed for scope
-        if !Path::new(gtfs_dir.as_ref().unwrap()).exists() {
-            // gotta download the thing
-            if *verbose {
-                eprintln!("Downloading {:#?}", gtfs_dir.as_ref().unwrap());
-            }
-            gtfs_tmpdir = tempfile::tempdir().expect("Could not create temporary GTFS directory");
-            let mut tmp_path = gtfs_tmpdir.path().to_path_buf();
+        // for lifetime reasons, we get a tempdir this way...
+        let gtfs_tempdir: Option<TempDir> = gtfs_dir.as_ref().filter(|x| !(x.exists())).map(|x| {
+            download_gtfs(dl_agent.clone(), x, *verbose)
+                .context("Didn't download a (GTFS) zip file. Skipping this month.")
+                .unwrap()
+        });
 
-            let resp = reqwest::blocking::get(gtfs_dir.as_ref().unwrap().to_str().unwrap())
-                .expect("Could not find or download patronage data");
-
-            if *verbose {
-                eprintln!("{:#?}", resp.headers());
-            }
-
-            let bytes = resp.bytes().unwrap();
-
-            if tree_magic_mini::match_u8("application/zip", &bytes) {
-                let cur = Cursor::new(bytes);
-                let mut zippy = zip::ZipArchive::new(cur).expect("Error reading downloaded ZIP");
-
-                for i in 0..zippy.len() {
-                    let mut zfile = zippy.by_index(i).expect("Error reading GTFS ZIP");
-                    tmp_path.push(zfile.name());
-                    let mut actual = File::create(&tmp_path).expect("Error saving GTFS file");
-                    std::io::copy(&mut zfile, &mut actual).expect("Error extracting from GTFS ZIP");
-                    tmp_path.pop();
-                }
-            } else {
-                eprintln!("Didn't download a (GTFS) zipfile. Skipping this month.");
-                return;
-            }
-            gtfs_actual_dir = tmp_path;
-        }
+        let gtfs_actual_dir = match gtfs_tempdir.as_ref() {
+            Some(x) => x.path(),
+            None => gtfs_dir
+                .as_ref()
+                .context("Missing GTFS directory")?
+                .as_path(),
+        };
 
         match load_gtfs(&db, gtfs_actual_dir) {
             Ok(_) => {
-                // if *verbose {
-                eprintln!(
-                    "Info: successfully loaded GTFS data as a database in {} seconds.\n\n",
-                    now.elapsed().as_secs()
-                )
-                // }
+                if *verbose {
+                    eprintln!(
+                        "Info: successfully loaded GTFS data as a database in {} seconds.\n\n",
+                        now.elapsed().as_millis() as f32 / 1000.0
+                    )
+                }
             }
             Err(e) => {
-                eprintln!(
+                bail!(
                     "Failed to load GTFS from disk; skipping this month. {:?}",
                     e
                 );
-                return;
             }
         }
 
@@ -491,9 +443,9 @@ fn single_month(
         let mut skipped = 0_usize;
         let total = rds.len();
 
-        if !verbose {
-            eprint!("{}", ansi_escapes::CursorPrevLine)
-        }
+        // if !verbose {
+        //     eprint!("{}", ansi_escapes::CursorPrevLine)
+        // }
 
         eprintln!(
             "0 routes done; 0 skipped (not in GTFS); {} total in patronage CSV",
@@ -512,11 +464,10 @@ fn single_month(
                 Ok(o) => o,
                 Err(e) => {
                     if one.len() == 2 {
-                        eprintln!(
+                        bail!(
                             "Error making stop sequences. Does {} {} exist? Perhaps it is seasonal and therefore not in the current GTFS data... try transitfeeds.com to see if they have a historical version.\n{}",
                             route, direction, e
                         );
-                        exit(1)
                     } else {
                         if *verbose {
                             eprintln!(
@@ -550,7 +501,7 @@ fn single_month(
                 *jumble,
                 css,
             )
-            .expect("Error generating SVG");
+            .context("Error generating SVG")?;
 
             write_outfile(
                 &outdir,
@@ -560,7 +511,7 @@ fn single_month(
                 ftime,
                 &out,
             )
-            .expect("Error writing SVG file");
+            .context("Error writing SVG file")?;
 
             // do this right at the end, so that if anything else causes a skip,
             // it won't be in the index
@@ -604,19 +555,19 @@ fn single_month(
                         k, d, k, d
                     ));
                 }
-                index_html.push_str("</tr>\n")
+                index_html.push_str("</tr>\n");
             }
             index_html.push_str("</table>\n</body>\n</html>");
 
             write_outfile(&outdir, "index.html", &month, &year, ftime, &index_html)
-                .expect("Error writing index");
+                .context("Error writing index.html")?;
         }
 
         if *verbose {
             eprintln!(
                 "Finished everything in {} seconds!",
-                now.elapsed().as_secs()
-            )
+                now.elapsed().as_millis() as f32 / 1000.0
+            );
         } else {
             eprintln!(
                 "{}{} routes done; {} skipped (not in GTFS); {} total in patronage CSV; completed in {} seconds.",
@@ -624,10 +575,110 @@ fn single_month(
                 done,
                 skipped,
                 total,
-                now.elapsed().as_secs()
+                now.elapsed().as_millis() as f32 / 1000.0
             );
         }
+        Ok(())
     }
+}
+
+fn download_patronage(dl_agent: Agent, in_file: &PathBuf, verbose: bool) -> Result<NamedTempFile> {
+    //! Attempt to download patronage data to a temporary file
+    eprintln!("Downloading {:#?}", in_file);
+    let mut pat_tmpfile = NamedTempFile::new().context("Error creating temporary file")?;
+    let resp = dl_agent
+        .get(in_file.to_str().unwrap())
+        .call()
+        .context("Could not find or download patronage data")?;
+    if verbose {
+        eprintln!(
+            "\t{:#?}\n\t{}{} {}",
+            resp.get_url(),
+            resp.status(),
+            resp.status_text(),
+            resp.http_version(),
+        );
+        for v in resp.headers_names() {
+            if let Some(h) = resp.header(&v) {
+                eprintln!("\t{v} {h}");
+            }
+        }
+        eprintln!();
+    }
+
+    let mut bytes: Vec<u8> = Vec::new();
+    resp.into_reader().read_to_end(&mut bytes).unwrap();
+
+    if tree_magic_mini::match_u8("application/zip", &bytes) {
+        // this is a zipfile lol
+        let cur = Cursor::new(bytes);
+        // Responses are merely Read, not Seek.. but Cursors are also Seek...
+        let mut zippy = zip::ZipArchive::new(cur).context("Error reading downloaded ZIP")?;
+        for i in 0..zippy.len() {
+            let mut f = zippy.by_index(i).expect("Error unzipping");
+            if f.name().ends_with(".csv") {
+                eprintln!("{}Extracting: {}", ansi_escapes::CursorPrevLine, f.name());
+                std::io::copy(&mut f, &mut pat_tmpfile).context("Error storing Patronage CSV")?;
+                break;
+            }
+        }
+    } else if tree_magic_mini::match_u8("text/csv", &bytes) {
+        // copy and hope
+        pat_tmpfile
+            .write_all(&bytes)
+            .context("Error saving patronage data to disk")?;
+    }
+    Ok(pat_tmpfile)
+}
+
+fn download_gtfs(dl_agent: Agent, gtfs_dir: &PathBuf, verbose: bool) -> Result<TempDir> {
+    //! Attempt download of GTFS data.
+
+    // gotta download the thing
+    // if verbose {
+    eprintln!("Downloading {:#?}", gtfs_dir);
+    // }
+    let gtfs_tmpdir = tempfile::tempdir()?;
+    let mut tmp_path = gtfs_tmpdir.path().to_path_buf();
+
+    let resp = dl_agent
+        .get(gtfs_dir.to_str().unwrap())
+        .call()
+        .context("Could not find or download patronage data")?;
+
+    if verbose {
+        eprintln!(
+            "\t{:#?}\n\t{}{} {}",
+            resp.get_url(),
+            resp.status(),
+            resp.status_text(),
+            resp.http_version(),
+        );
+        for v in resp.headers_names() {
+            if let Some(h) = resp.header(&v) {
+                eprintln!("\t{v} {h}");
+            }
+        }
+    }
+
+    let mut bytes: Vec<u8> = Vec::new();
+    resp.into_reader().read_to_end(&mut bytes)?;
+
+    if tree_magic_mini::match_u8("application/zip", &bytes) {
+        let cur = Cursor::new(bytes);
+        let mut zippy = zip::ZipArchive::new(cur).context("Error reading downloaded ZIP")?;
+
+        for i in 0..zippy.len() {
+            let mut zfile = zippy.by_index(i).context("Error reading GTFS ZIP")?;
+            tmp_path.push(zfile.name());
+            let mut actual = File::create(&tmp_path).context("Error saving GTFS file")?;
+            std::io::copy(&mut zfile, &mut actual).context("Error extracting from GTFS ZIP")?;
+            tmp_path.pop();
+        }
+    } else {
+        bail!(std::io::Error::from(std::io::ErrorKind::InvalidData));
+    }
+    Ok(gtfs_tmpdir)
 }
 
 fn write_outfile(
@@ -662,10 +713,7 @@ fn convert_direction(from: &str) -> &'static str {
     //! Convert a direction name like "inbound" to a "0" or "1"  
     let froml = from.to_lowercase();
     match froml.as_str() {
-        "counterclockwise" => "1",
-        "outbound" => "1",
-        "south" => "1",
-        "west" => "1",
+        "counterclockwise" | "outbound" | "south" | "west" => "1",
         _ => "0",
     }
 }
@@ -698,11 +746,14 @@ fn days_per_month(month: &str, year: &str) -> f32 {
 
     match m {
         9 | 4 | 6 | 11 => 30.0, // (1) 30 days hath September, April, June and November,
-        2 => match leap {
-            // (3) except February,
-            true => 29.0,  // (3b) and 29 days each leap year.
-            false => 28.0, // (3a) which has 28 days clear,
-        },
+        2 => {
+            if leap {
+                // (3) except February,
+                29.0 // (3b) and 29 days each leap year.
+            } else {
+                28.0 // (3a) which has 28 days clear,
+            }
+        }
         _ => 31.0, // (2) all the rest have 31,
     }
 }
