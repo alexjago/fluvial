@@ -7,9 +7,9 @@ use std::path::PathBuf;
 use rusqlite::{Connection, Result};
 
 use serde::{Deserialize, Serialize};
-use serde_rusqlite::*;
+use serde_rusqlite::from_rows;
 
-use super::*;
+use super::{convert_direction, days_per_month, get_boardings, Path};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct StopSeq {
@@ -41,20 +41,18 @@ struct FirstLastSeq {
 }
 
 pub fn load_gtfs(db: &Connection, gtfs_dir: &Path) -> Result<(), rusqlite::Error> {
-    //! Loads all the GTFS CSVs into SQLite tables in `db`
+    //! Loads all the GTFS CSVs into `SQLite` tables in `db`
     // let now = std::time::Instant::now();
 
     let mut dir: PathBuf = PathBuf::from(gtfs_dir);
 
-    for (t, p) in [
+    for (t, p) in &[
         ("Calendar", "calendar.txt"),
         ("Routes", "routes.txt"),
         ("Stops", "stops.txt"),
         ("StopTimes", "stop_times.txt"),
         ("Trips", "trips.txt"),
-    ]
-    .iter()
-    {
+    ] {
         dir.push(&p);
 
         let schema = format!(
@@ -255,7 +253,7 @@ fn get_gtfs_stop_seqs(
     route: &str,
     direction: &str,
 ) -> Result<Vec<StopSeq>, serde_rusqlite::Error> {
-    //! Get the StopSeqs for all services of the given route/direction.
+    //! Get the `StopSeqs` for all services of the given route/direction.
     //! Route variations are distinguishable by `shape_id`.
 
     // Frustrating that we have to use shape_id rather than route_id...
@@ -343,7 +341,7 @@ pub fn make_stop_sequence(
 
     //     println!("ID\tSeq.\tShape\tQty");
 
-    for r in rows.iter() {
+    for r in &rows {
         //         println!(
         //             "{}\t{}\t{}\t{}",
         //             r.stop_id, r.stop_sequence, r.shape_id, r.qty
@@ -363,7 +361,7 @@ pub fn make_stop_sequence(
     // Sort all firsts by runs and then patronage
     let mut only_firsts: Vec<(i64, i64, i64)> = Vec::new();
     let mut all_firsts: Vec<(i64, i64, i64)> = Vec::new();
-    for (id, firsts) in firsts.iter() {
+    for (id, firsts) in &firsts {
         let patronage = get_boardings(db, route, direction_name, *id).unwrap_or(0);
         all_firsts.push((*firsts, patronage, *id));
         if !not_only_firsts.contains(id) {
@@ -457,13 +455,13 @@ pub fn make_stop_sequence(
 
     let mut mainde: VecDeque<VecDeque<i64>> = VecDeque::new();
 
-    for stop in final_order.iter() {
+    for stop in &final_order {
         for shape in shape_stops.iter().filter_map(|(k, v)| match v == stop {
             true => Some(k),
             _ => None,
         }) {
             let mut de = VecDeque::new();
-            for r in rows.iter() {
+            for r in &rows {
                 if r.shape_id == *shape {
                     de.push_back(r.stop_id)
                 }
@@ -480,8 +478,8 @@ pub fn make_stop_sequence(
 fn topo_merge(mut input: VecDeque<VecDeque<i64>>) -> Vec<i64> {
     //! Merge a collection of ordered sequences in a toposort-compatible way
 
-    //! * input: a collection of sequences of of stop_ids (in stop_sequence order), one per shape_id  
-    //! * output: a single, merged sequence of stop_ids  
+    //! * input: a collection of sequences of of `stop_ids` (in `stop_sequence` order), one per `shape_id`  
+    //! * output: a single, merged sequence of `stop_ids`  
 
     //! ```text
     //! loop over sequences:    
@@ -507,14 +505,14 @@ fn topo_merge(mut input: VecDeque<VecDeque<i64>>) -> Vec<i64> {
             // if the temp queue already contains this stop, we have a loop to break
             // solution: cut and run
             if temp.contains(&id) {
-                for t in temp.iter() {
+                for t in &temp {
                     output.push(*t);
                 }
                 temp.clear();
                 continue;
             }
             // "merge" other sequences in if possible (by popping this stop from them)
-            for ode in input.iter_mut() {
+            for ode in &mut input {
                 if let Some(o) = ode.front() {
                     if *o == id {
                         ode.pop_front();
@@ -525,7 +523,7 @@ fn topo_merge(mut input: VecDeque<VecDeque<i64>>) -> Vec<i64> {
             if let Some(c) = output.iter().position(|s| *s == id) {
                 let mut cursor = c;
                 //                     println!("... found duplicate {} at {}", id, c);
-                for t in temp.iter() {
+                for t in &temp {
                     output.insert(cursor, *t);
                     cursor += 1;
                 }
@@ -536,7 +534,7 @@ fn topo_merge(mut input: VecDeque<VecDeque<i64>>) -> Vec<i64> {
             }
         }
         // end of the sequence, append any remaining temp queue to output
-        for t in temp.iter() {
+        for t in &temp {
             output.push(*t);
         }
         temp.clear();
@@ -549,7 +547,7 @@ fn gc_distance(from_lat: f64, from_lon: f64, to_lat: f64, to_lon: f64) -> f64 {
     //! Calculate the great-circle distance between two points on Earth.
     //! Takes coordinates in decimal degrees.
 
-    let r = 6371000.0; // approximate average radius of Earth
+    let r = 6_371_000.0; // approximate average radius of Earth
 
     // radian conversion
     let from_lat = from_lat * std::f64::consts::PI / 180.0;
@@ -636,9 +634,6 @@ pub fn get_service_count(
             maxes[6] = r.freq;
         }
     }
-
-    // BUG: it appears to be the case that the query is returning no rows.
-    // eprintln!("\n\n\n");
 
     let out: i32 =
         (maxes.iter().sum::<i32>() as f32 * days_per_month(month, year) / 7.0).round() as i32;

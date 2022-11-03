@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use hsluv::*;
+use hsluv::hsluv_to_hex;
 use rand::Rng;
 use std::path::PathBuf;
 
@@ -81,7 +81,7 @@ where
 }
 
 fn sum_up(patronages: &BTreeMap<(i32, i32), i32>) -> (BTreeMap<i32, i32>, BTreeMap<i32, i32>) {
-    //! {(origin_stop : patronage} and {destination_stop : patronage}
+    //! {(`origin_stop` : patronage} and {`destination_stop` : patronage}
     let mut boardings: BTreeMap<i32, i32> = BTreeMap::new();
     let mut alightings: BTreeMap<i32, i32> = BTreeMap::new();
 
@@ -168,10 +168,10 @@ pub fn visualise_one(
     let doc_width = EXTRA + main_width + EXTRA;
     let doc_height = TEXT_SECTION + main_height;
 
-    let boarding_max = boardings.values().cloned().max().unwrap_or(0);
-    let alighting_max = alightings.values().cloned().max().unwrap_or(0);
+    let boarding_max = boardings.values().copied().max().unwrap_or(0);
+    let alighting_max = alightings.values().copied().max().unwrap_or(0);
 
-    let tots_max = (boarding_max + alighting_max) as f64 * SPACE / (BETWEEN - MIN_GAP);
+    let tots_max = f64::from(boarding_max + alighting_max) * SPACE / (BETWEEN - MIN_GAP);
 
     let mut midline = format!(
         r#"<line class="mainline" x1="{}" x2="{}" y1="{}" y2="{}" />"#,
@@ -226,7 +226,7 @@ pub fn visualise_one(
 
             let y1 = main_height;
             let y2 = y1;
-            let width = SPACE * quantity as f64 / tots_max;
+            let width = SPACE * f64::from(quantity) / tots_max;
 
             // need to figure out arcs in/out of the page, and have two of them - "wrap around"
             // these need to be two-arc paths!
@@ -273,7 +273,7 @@ pub fn visualise_one(
         let fromstr = from.to_string();
         let from_name = stop_names.get(&from).unwrap_or(&fromstr);
 
-        let orig_total = SPACE * (*boardings.get(&(from as i32)).unwrap_or(&0) as f64) / tots_max;
+        let orig_total = SPACE * f64::from(*boardings.get(&(from as i32)).unwrap_or(&0)) / tots_max;
 
         // we're going outside-in here so the wraparound subtotals aren't relevant to us
         // and due to how we iterate, we only need the scalar here
@@ -296,7 +296,7 @@ pub fn visualise_one(
             // now we need to construct our path coordinates
             let y1 = main_height;
             let y2 = y1;
-            let width = SPACE * quantity as f64 / tots_max;
+            let width = SPACE * f64::from(quantity) / tots_max;
 
             let dst = dest_subtotals[to_idx];
 
@@ -334,7 +334,7 @@ pub fn visualise_one(
         let t_y = main_height + SPACE / 2.0;
         let t_y2 = t_y + SPACE / 2.0;
 
-        for t_c in ["keyline", "foreground"].iter() {
+        for t_c in &["keyline", "foreground"] {
             let label_txt = format!(
                 r#"<text class="{t_c}" font-size="25.0" text-anchor="end" transform="rotate(270,{t_x},{t_y})" x="{t_x}" y="{t_y}">{from_name}<tspan x="{t_x}" y="{t_y2}">{line2}</tspan></text>"#,
                 t_c = *t_c,
@@ -353,7 +353,7 @@ pub fn visualise_one(
 
         let b_x = EXTRA + (from_idx as f64) * BETWEEN + BETWEEN / 2.0;
         let b_y1 = doc_height;
-        let b_y2 = doc_height - ((SPACE * (current_load as f64)) / tots_max);
+        let b_y2 = doc_height - ((SPACE * f64::from(current_load)) / tots_max);
 
         let bar = format!(
             r#"<line class="bargraph" stroke-width="{}" x1="{}" x2="{}" y1="{}" y2="{}" />"#,
@@ -367,7 +367,7 @@ pub fn visualise_one(
             false => "",
         };
 
-        for t_c in ["keyline", "foreground"].iter() {
+        for t_c in &["keyline", "foreground"] {
             let bt = format!(
                 r#"<text class="{} bartxt" text-anchor="middle" x="{}" y="{}">{}{}</text>"#,
                 *t_c,

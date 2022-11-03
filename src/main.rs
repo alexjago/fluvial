@@ -24,10 +24,10 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 
 mod gtfs;
-use crate::gtfs::*;
+use crate::gtfs::{get_service_count, get_stop_names, load_gtfs, make_stop_sequence};
 
 mod visualise;
-use crate::visualise::*;
+use crate::visualise::visualise_one;
 use std::fs::File;
 
 type RouteDir = (String, String);
@@ -85,7 +85,7 @@ fn list_routes(db: &Connection) -> Result<Vec<RouteDir>> {
 
     let mut rd = rdstmt
         .query_map([], |row| Ok((row.get_unwrap(0), row.get_unwrap(1))))?
-        .filter_map(|l| l.ok())
+        .filter_map(std::result::Result::ok)
         .collect::<Vec<RouteDir>>();
 
     rd.sort_unstable();
@@ -132,7 +132,7 @@ fn make_one(
         },
         |row| Ok((row.get(0), row.get(1), row.get(2))),
     )?
-    .filter_map(|l| l.ok())
+    .filter_map(std::result::Result::ok)
     .filter(|l| l.0.is_ok() && l.1.is_ok() && l.2.is_ok())
     .map(|l| (l.0.unwrap(), l.1.unwrap(), l.2.unwrap()))
     .for_each(|r| {
@@ -228,7 +228,7 @@ fn main() -> Result<()> {
             .has_headers(false)
             .from_reader(batch_stream);
 
-        for r in rdr.records().filter_map(|s| s.ok()) {
+        for r in rdr.records().filter_map(std::result::Result::ok) {
             let patronage_uri = PathBuf::from(r.get(0).context("Missing patronage URI!")?);
             let gtfs_uri = PathBuf::from(r.get(1).context("Missing GTFS URI!")?);
 
