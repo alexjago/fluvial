@@ -23,33 +23,50 @@ pub type Quantity = u32;
 /// A collated stop sequence entry after aggregation over like Trips
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct StopSeq {
+    /// ID of the stop
     stop_id: StopId,
+    /// Sequence number of the stop
     stop_sequence: StopSequence,
+    /// Aggregation shape ID
     shape_id: ShapeId,
+    /// Number of services aggregated
     qty: Quantity,
 }
 
 /// A semi-synthetic representation of service levels over a week
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct ServiceCounts {
+    /// Total number of services for whatever this (route, direction, serviceID) is in the dataset
     freq: u32,
+    /// Monday from `calendar.txt`
     monday: i8,
+    /// Tuesday from `calendar.txt`
     tuesday: i8,
+    /// Wednesday from `calendar.txt`
     wednesday: i8,
+    /// Thursday from `calendar.txt`
     thursday: i8,
+    /// Friday from `calendar.txt`
     friday: i8,
+    /// Saturday from `calendar.txt`
     saturday: i8,
+    /// Sunday from `calendar.txt`
     sunday: i8,
 }
 
-/// Related to [StopSeq], a combination of the first and last [StopId]
-/// for a set of like trips (same route, direction, [ShapeId])
+/// Related to [`StopSeq`], a combination of the first and last [`StopId`]
+/// for a set of like trips (same route, direction, [`ShapeId`])
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct FirstLastSeq {
+    /// first stop
     first: StopId,
+    /// last stop
     last: StopId,
+    /// relevant shape_id
     shape_id: ShapeId,
+    /// number of stops
     len: Quantity,
+    /// number of trips aggregated like this
     qty: Quantity,
 }
 
@@ -266,8 +283,8 @@ fn get_gtfs_stop_seqs(
     route: &str,
     direction: &str,
 ) -> Result<Vec<StopSeq>, serde_rusqlite::Error> {
-    //! Get the [StopSeq]s for all services of the given route/direction.
-    //! Route variations are distinguishable by their [ShapeId].
+    //! Get the [`StopSeq`]s for all services of the given route/direction.
+    //! Route variations are distinguishable by their [`ShapeId`].
 
     // Frustrating that we have to use shape_id rather than route_id...
 
@@ -282,7 +299,7 @@ fn get_gtfs_stop_seqs(
     out
 }
 
-/// Get the first and last [StopId] for a set of like Trips
+/// Get the first and last [`StopId`] for a set of like Trips
 #[inline(never)]
 fn get_gtfs_first_lasts(
     db: &Connection,

@@ -10,7 +10,7 @@
 #![warn(clippy::pedantic)]
 #![warn(clippy::style)]
 // The spicy one
-#![warn(clippy::restriction)]
+// #![warn(clippy::restriction)]
 // restriction allows
 #![allow(clippy::implicit_return)]
 #![allow(clippy::float_arithmetic)]
@@ -21,6 +21,7 @@
 // restriction warns
 #![warn(clippy::unwrap_used)]
 #![warn(clippy::expect_used)]
+#![warn(clippy::missing_docs_in_private_items)]
 // pedantic allows
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_precision_loss)]
@@ -41,7 +42,6 @@ use std::fmt::Write as FmtWrite;
 use std::io::{Cursor, Read, Write};
 use std::iter::Iterator;
 use std::path::{Path, PathBuf};
-use std::process::exit;
 
 mod gtfs;
 use crate::gtfs::{get_service_count, get_stop_names, load_gtfs, make_stop_sequence, StopId};
@@ -187,6 +187,8 @@ fn get_boardings(
     )
 }
 
+/// Get the (most common) month and year from the Patronage file
+/// so that we know what we're working with here.
 fn get_month_year(db: &Connection) -> rusqlite::Result<(String, String)> {
     let mut stmt = db.prepare(
         "SELECT `month`, COUNT(`month`) AS `freq`
@@ -219,12 +221,12 @@ fn main() -> Result<()> {
         /* Before releasing a new version, run...
            cargo-license --avoid-build-deps --avoid-dev-deps -a -t > src/dependencies.txt
         */
-        exit(0);
+        return Ok(());
     }
 
     if opts.utilities {
         println!("Get all utility scripts for Fluvial at\nhttps://github.com/alexjago/fluvial/tree/master/utils");
-        exit(0);
+        return Ok(());
     }
 
     if opts.batch {
@@ -409,8 +411,8 @@ fn single_month(
         }
 
         //eprintln!("rds: {:?}", rds);
-        let mut completed = 0_usize;
-        let mut skipped = 0_usize;
+        let mut completed = 0usize;
+        let mut skipped = 0usize;
         let total = rd_seq.len();
 
         // if !verbose {
@@ -674,6 +676,7 @@ fn load_patronage(
     Ok(())
 }
 
+/// Write out `index.html` for this month.
 fn write_index_html(
     rd_tree: &BTreeMap<String, Vec<String>>,
     out_dir: &Path,
