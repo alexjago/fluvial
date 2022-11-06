@@ -4,24 +4,35 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::iter::Iterator;
 use std::path::PathBuf;
 
-use rusqlite::{Connection, Result};
-
+use anyhow::{bail, Context, Result};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_rusqlite::from_rows;
 
 use super::{convert_direction, days_per_month, get_boardings, Path};
 
+/// A GTFS stop id. Theoretically, this should be text, not int...
+pub type StopId = u32;
+///  Sequence of stops on a specific service run
+pub type StopSequence = u32;
+/// Identifies of a GTFS shape
+pub type ShapeId = String;
+/// A count of services or people
+pub type Quantity = u32;
+
+/// A collated stop sequence entry after aggregation over like Trips
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct StopSeq {
-    stop_id: i64,
-    stop_sequence: i64,
-    shape_id: String,
-    qty: i64,
+    stop_id: StopId,
+    stop_sequence: StopSequence,
+    shape_id: ShapeId,
+    qty: Quantity,
 }
 
+/// A semi-synthetic representation of service levels over a week
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct ServiceCounts {
-    freq: i32,
+    freq: u32,
     monday: i8,
     tuesday: i8,
     wednesday: i8,
@@ -31,13 +42,15 @@ struct ServiceCounts {
     sunday: i8,
 }
 
+/// Related to [StopSeq], a combination of the first and last [StopId]
+/// for a set of like trips (same route, direction, [ShapeId])
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct FirstLastSeq {
-    first: i64,
-    last: i64,
-    shape_id: String,
-    len: i64,
-    qty: i64,
+    first: StopId,
+    last: StopId,
+    shape_id: ShapeId,
+    len: Quantity,
+    qty: Quantity,
 }
 
 pub fn load_gtfs(db: &Connection, gtfs_dir: &Path) -> Result<(), rusqlite::Error> {
@@ -46,7 +59,7 @@ pub fn load_gtfs(db: &Connection, gtfs_dir: &Path) -> Result<(), rusqlite::Error
 
     let mut dir: PathBuf = PathBuf::from(gtfs_dir);
 
-    for (t, p) in &[
+    for (t, p) in [
         ("Calendar", "calendar.txt"),
         ("Routes", "routes.txt"),
         ("Stops", "stops.txt"),
@@ -253,8 +266,8 @@ fn get_gtfs_stop_seqs(
     route: &str,
     direction: &str,
 ) -> Result<Vec<StopSeq>, serde_rusqlite::Error> {
-    //! Get the `StopSeqs` for all services of the given route/direction.
-    //! Route variations are distinguishable by `shape_id`.
+    //! Get the [StopSeq]s for all services of the given route/direction.
+    //! Route variations are distinguishable by their [ShapeId].
 
     // Frustrating that we have to use shape_id rather than route_id...
 
@@ -269,6 +282,7 @@ fn get_gtfs_stop_seqs(
     out
 }
 
+/// Get the first and last [StopId] for a set of like Trips
 #[inline(never)]
 fn get_gtfs_first_lasts(
     db: &Connection,
@@ -294,7 +308,7 @@ pub fn make_stop_sequence(
     db: &Connection,
     route: &str,
     direction_name: &str,
-) -> Result<Vec<i64>, serde_rusqlite::Error> {
+) -> anyhow::Result<Vec<StopId>> {
     //! Creates a route-ordered list of `stop_id`s for a given route/direction.
 
     /* This task is actually rather complicated:
@@ -314,16 +328,11 @@ pub fn make_stop_sequence(
 
     let direction = convert_direction(direction_name);
 
-    let rows = match get_gtfs_stop_seqs(db, route, direction) {
-        Ok(o) => o,
-        Err(e) => return Err(e),
-    };
+    let rows = get_gtfs_stop_seqs(db, route, direction)?;
     //     eprintln!("Executed GTFS query OK! {} rows returned...", rows.len());
 
     if rows.is_empty() {
-        return Err(serde_rusqlite::Error::Rusqlite(
-            rusqlite::Error::QueryReturnedNoRows,
-        ));
+        bail!(rusqlite::Error::QueryReturnedNoRows);
     }
 
     /* Oracling like a boss
@@ -334,10 +343,10 @@ pub fn make_stop_sequence(
      * tiebreak by boardings, then stop_id
      */
 
-    let mut firsts: BTreeMap<i64, i64> = BTreeMap::new();
-    let mut not_only_firsts: HashSet<i64> = HashSet::new();
-    let mut shape_stops: BTreeMap<&str, i64> = BTreeMap::new();
-    let mut first_stop_shapes: BTreeMap<i64, &str> = BTreeMap::new();
+    let mut firsts = BTreeMap::new();
+    let mut not_only_firsts = HashSet::new();
+    let mut shape_stops = BTreeMap::new();
+    let mut first_stop_shapes = BTreeMap::new();
 
     //     println!("ID\tSeq.\tShape\tQty");
 
@@ -347,8 +356,9 @@ pub fn make_stop_sequence(
         //             r.stop_id, r.stop_sequence, r.shape_id, r.qty
         //         );
 
+        // FIXME: stop sequence doesn't have to start at 1
         if r.stop_sequence < 2 {
-            let c: i64 = *firsts.get(&r.stop_id).unwrap_or(&0);
+            let c: u32 = *firsts.get(&r.stop_id).unwrap_or(&0);
             firsts.insert(r.stop_id, r.qty + c);
             shape_stops.insert(&r.shape_id, r.stop_id);
             first_stop_shapes.insert(r.stop_id, &r.shape_id);
@@ -359,13 +369,13 @@ pub fn make_stop_sequence(
 
     // Ideally we want a "pure" first but they aren't always available.
     // Sort all firsts by runs and then patronage
-    let mut only_firsts: Vec<(i64, i64, i64)> = Vec::new();
-    let mut all_firsts: Vec<(i64, i64, i64)> = Vec::new();
-    for (id, firsts) in &firsts {
+    let mut only_firsts: Vec<(u32, u32, u32)> = Vec::new();
+    let mut all_firsts: Vec<(u32, u32, u32)> = Vec::new();
+    for (id, f) in &firsts {
         let patronage = get_boardings(db, route, direction_name, *id).unwrap_or(0);
-        all_firsts.push((*firsts, patronage, *id));
+        all_firsts.push((*f, patronage, *id));
         if !not_only_firsts.contains(id) {
-            only_firsts.push((*firsts, patronage, *id));
+            only_firsts.push((*f, patronage, *id));
         }
     }
     all_firsts.sort_unstable();
@@ -374,8 +384,8 @@ pub fn make_stop_sequence(
     only_firsts.reverse();
 
     let oracle_stop_id = match only_firsts.len() {
-        0 => all_firsts.first().unwrap().2,
-        _ => only_firsts.first().unwrap().2,
+        0 => all_firsts.first().context("")?.2,
+        _ => only_firsts.first().context("")?.2,
     };
     // If there was a pure-first we've picked it to be oracle_stop_id
     // Otherwise we've taken the best non-pure first
@@ -386,45 +396,34 @@ pub fn make_stop_sequence(
     // *Extremely* cheeky solution: go by physical closeness to last stop
 
     // collate as-yet unallocated sequence starts
-    let mut unalloc: HashSet<i64> = all_firsts
+    let mut unalloc: HashSet<u32> = all_firsts
         .iter()
-        .filter_map(|r| {
-            if r.2 != oracle_stop_id {
-                Some(r.2)
-            } else {
-                None
-            }
-        })
+        .filter_map(|r| if r.2 == oracle_stop_id { None } else { Some(r.2) })
         .collect();
-    let mut final_order: Vec<i64> = Vec::with_capacity(all_firsts.len());
-    let mut prev_first: i64 = oracle_stop_id;
+    let mut final_order: Vec<u32> = Vec::with_capacity(all_firsts.len());
+    let mut prev_first: u32 = oracle_stop_id;
 
     // get a lookup table of first and last stop_ids pre-sorted by first
-    let first_last_rows: Vec<FirstLastSeq> = match get_gtfs_first_lasts(db, route, direction) {
-        Ok(o) => o,
-        Err(e) => return Err(e),
-    };
+    let first_last_rows: Vec<FirstLastSeq> = get_gtfs_first_lasts(db, route, direction)?;
     if first_last_rows.is_empty() {
-        return Err(serde_rusqlite::Error::Rusqlite(
-            rusqlite::Error::QueryReturnedNoRows,
-        ));
+        bail!(rusqlite::Error::QueryReturnedNoRows);
     }
 
     // physical-closeness iteration
     for _ in 0..all_firsts.len() {
         final_order.push(prev_first);
 
-        let prev_idx = first_last_rows
-            .binary_search_by_key(&prev_first, |x| x.first)
-            .unwrap();
-        let prev_last = first_last_rows[prev_idx].last;
+        let prev_idx = match first_last_rows.binary_search_by_key(&prev_first, |x| x.first) {
+            Ok(x) => x,
+            Err(e) => bail!(e),
+        };
+        let prev_terminus = first_last_rows[prev_idx].last;
 
         // need lat/long of prev_last
         let mut stmt =
             db.prepare("SELECT stop_lat, stop_lon FROM Stops WHERE stop_id = :stop_id;")?;
-        let prev_coords = stmt.query_row(&[(":stop_id", &prev_last)], |r| {
-            Ok((r.get_unwrap(0), r.get_unwrap(1)))
-        })?;
+        let prev_coords =
+            stmt.query_row(&[(":stop_id", &prev_terminus)], |r| Ok((r.get(0)?, r.get(1)?)))?;
 
         let prev_lat: f64 = prev_coords.0;
         let prev_lon: f64 = prev_coords.1;
@@ -434,9 +433,8 @@ pub fn make_stop_sequence(
 
         // iterate over as-yet-unallocated sequence starts and select closest
         for k in &unalloc {
-            let test_coords = stmt.query_row(&[(":stop_id", &k)], |r| {
-                Ok((r.get_unwrap(0), r.get_unwrap(1)))
-            })?;
+            let test_coords =
+                stmt.query_row(&[(":stop_id", &k)], |r| Ok((r.get(0)?, r.get(1)?)))?;
             let test_lat: f64 = test_coords.0;
             let test_lon: f64 = test_coords.1;
             let dist = gc_distance(prev_lat, prev_lon, test_lat, test_lon);
@@ -453,17 +451,14 @@ pub fn make_stop_sequence(
 
     // now create a deque of deques for topomerging
 
-    let mut mainde: VecDeque<VecDeque<i64>> = VecDeque::new();
+    let mut mainde: VecDeque<VecDeque<StopId>> = VecDeque::new();
 
     for stop in &final_order {
-        for shape in shape_stops.iter().filter_map(|(k, v)| match v == stop {
-            true => Some(k),
-            _ => None,
-        }) {
+        for shape in shape_stops.iter().filter_map(|(k, v)| (v == stop).then(|| k)) {
             let mut de = VecDeque::new();
             for r in &rows {
-                if r.shape_id == *shape {
-                    de.push_back(r.stop_id)
+                if r.shape_id == **shape {
+                    de.push_back(r.stop_id);
                 }
             }
             mainde.push_back(de);
@@ -472,10 +467,10 @@ pub fn make_stop_sequence(
 
     //     println!("mainde: {:?}", mainde);
 
-    Ok(topo_merge(mainde))
+    topo_merge(mainde)
 }
 
-fn topo_merge(mut input: VecDeque<VecDeque<i64>>) -> Vec<i64> {
+fn topo_merge(mut input: VecDeque<VecDeque<StopId>>) -> Result<Vec<StopId>> {
     //! Merge a collection of ordered sequences in a toposort-compatible way
 
     //! * input: a collection of sequences of of `stop_ids` (in `stop_sequence` order), one per `shape_id`  
@@ -494,14 +489,14 @@ fn topo_merge(mut input: VecDeque<VecDeque<i64>>) -> Vec<i64> {
     //!   clear temp queue, iterate
     //! ```
 
-    let mut output: Vec<i64> = Vec::new();
+    let mut output = Vec::new();
     // a temporary queue
-    let mut temp: VecDeque<i64> = VecDeque::new();
+    let mut temp = VecDeque::new();
 
     while !input.is_empty() {
-        let mut de = input.pop_front().unwrap();
+        let mut de = input.pop_front().context("Out of stop sequences")?;
         while !de.is_empty() {
-            let id = de.pop_front().unwrap();
+            let id = de.pop_front().context("Empty stop sequence")?;
             // if the temp queue already contains this stop, we have a loop to break
             // solution: cut and run
             if temp.contains(&id) {
@@ -540,7 +535,7 @@ fn topo_merge(mut input: VecDeque<VecDeque<i64>>) -> Vec<i64> {
         temp.clear();
     }
 
-    output
+    Ok(output)
 }
 
 fn gc_distance(from_lat: f64, from_lon: f64, to_lat: f64, to_lon: f64) -> f64 {
@@ -565,10 +560,10 @@ fn gc_distance(from_lat: f64, from_lon: f64, to_lat: f64, to_lon: f64) -> f64 {
 
 pub fn get_stop_names(
     db: &Connection,
-    input: &[i64],
-) -> Result<BTreeMap<i64, String>, serde_rusqlite::Error> {
+    input: &[StopId],
+) -> Result<BTreeMap<StopId, String>, serde_rusqlite::Error> {
     //! Get stop names from stop sequences
-    let mut output: BTreeMap<i64, String> = BTreeMap::new();
+    let mut output: BTreeMap<StopId, String> = BTreeMap::new();
 
     let mut stmt = db.prepare_cached("SELECT stop_name FROM Stops WHERE stop_id = :id")?;
 
@@ -586,7 +581,7 @@ pub fn get_service_count(
     direction_name: &str,
     month: &str,
     year: &str,
-) -> serde_rusqlite::Result<i32> {
+) -> Result<Quantity> {
     //! Get the (estimated) monthly service count for the specified route/direction.
 
     let mut stmt = db.prepare(
@@ -594,16 +589,15 @@ pub fn get_service_count(
     FROM ServiceCounts WHERE route_short_name = :route AND direction_id = :direction",
     )?;
 
-    let res = from_rows::<ServiceCounts>(stmt.query(&[
-        (":route", &route),
-        (":direction", &convert_direction(direction_name)),
-    ])?);
+    let res = from_rows::<ServiceCounts>(
+        stmt.query(&[(":route", &route), (":direction", &convert_direction(direction_name))])?,
+    );
 
     // Problem: often there are a few different trip_ids. They're for different date ranges.
     // We need to disambiguate by selecting only one trip_id per day of the week
     // Proposed method: use the max freq for any given day
 
-    let mut maxes = vec![0_i32; 7];
+    let mut maxes: Vec<Quantity> = vec![0; 7];
 
     // eprintln!("\n{} {}", route, direction_name);
 
@@ -635,7 +629,12 @@ pub fn get_service_count(
         }
     }
 
-    let out: i32 =
-        (maxes.iter().sum::<i32>() as f32 * days_per_month(month, year) / 7.0).round() as i32;
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_sign_loss)]
+    let out = (maxes.iter().sum::<Quantity>() as f32
+        * days_per_month(month, year).context("Error parsing month & year")?
+        / 7.0)
+        .abs()
+        .round() as Quantity;
     Ok(out)
 }

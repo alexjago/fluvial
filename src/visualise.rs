@@ -1,16 +1,25 @@
 //! Perform the actual visualisation
 
 use std::collections::BTreeMap;
+use std::fmt::Write as FmtWrite;
 
+use anyhow::Result;
 use hsluv::hsluv_to_hex;
 use rand::Rng;
 use std::path::PathBuf;
 
+use crate::gtfs::{Quantity, StopId};
+
 // spacing constants
+/// Spacing unit in pixels
 const SPACE: f64 = 50.0;
+/// Distance between stops
 const BETWEEN: f64 = 2.5 * SPACE;
+/// Minimum distance
 const MIN_GAP: f64 = 0.5 * SPACE;
+/// Height of the text section
 const TEXT_SECTION: f64 = 11.0 * SPACE;
+/// Edge padding
 const EXTRA: f64 = 2.0 * SPACE;
 
 fn colour_list(count: usize) -> Vec<String> {
@@ -44,12 +53,7 @@ where
     if len < 2 {
         input
     } else if len == 4 {
-        vec![
-            input[1].clone(),
-            input[3].clone(),
-            input[0].clone(),
-            input[2].clone(),
-        ]
+        vec![input[1].clone(), input[3].clone(), input[0].clone(), input[2].clone()]
     } else if len == 6 {
         vec![
             input[1].clone(),
@@ -80,17 +84,19 @@ where
     }
 }
 
-fn sum_up(patronages: &BTreeMap<(i32, i32), i32>) -> (BTreeMap<i32, i32>, BTreeMap<i32, i32>) {
+fn sum_up(
+    patronages: &BTreeMap<(StopId, StopId), Quantity>,
+) -> (BTreeMap<StopId, Quantity>, BTreeMap<StopId, Quantity>) {
     //! {(`origin_stop` : patronage} and {`destination_stop` : patronage}
-    let mut boardings: BTreeMap<i32, i32> = BTreeMap::new();
-    let mut alightings: BTreeMap<i32, i32> = BTreeMap::new();
+    let mut boardings = BTreeMap::new();
+    let mut alightings = BTreeMap::new();
 
     for (k, qty) in patronages {
-        let from: i32 = k.0;
-        let to: i32 = k.1;
+        let from = k.0;
+        let to = k.1;
 
-        let fq: i32 = *boardings.get(&from).unwrap_or(&0);
-        let tq: i32 = *alightings.get(&to).unwrap_or(&0);
+        let fq = *boardings.get(&from).unwrap_or(&0);
+        let tq = *alightings.get(&to).unwrap_or(&0);
 
         boardings.insert(from, qty + fq);
         alightings.insert(to, qty + tq);
@@ -103,36 +109,37 @@ fn make_css(
     jumble_colours: bool,
     css_path: &Option<PathBuf>,
     stop_count: usize,
-) -> std::io::Result<String> {
+) -> Result<String> {
     //! Construct CSS including its colour list.
 
     // 1. load CSS
-    let mut css = match css_path {
+    let mut css = match css_path.as_ref() {
         Some(p) => std::fs::read_to_string(p)?,
         None => String::from(include_str!("default.css")),
     };
     // 2. create colour list
-    let colours = match jumble_colours {
-        true => jumbled(colour_list(stop_count)),
-        false => colour_list(stop_count),
-    };
+    let colours =
+        if jumble_colours { jumbled(colour_list(stop_count)) } else { colour_list(stop_count) };
     // put colours into CSS
     for (k, colour) in colours.iter().enumerate().take(stop_count) {
-        let colour_by = match swap_colours {
-            true => "t",
-            false => "f",
-        };
-        css.push_str(&format!(".{}{} {{stroke: {}}}\n", colour_by, k, colour));
+        let colour_by = if swap_colours { "t" } else { "f" };
+        writeln!(css, ".{}{} {{stroke: {}}}", colour_by, k, colour)?;
     }
 
     Ok(css)
 }
 
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
+/// Visualise a single route.
+/// Stops are laid out left-right in order of `stop_sequence`
+/// Arcs are drawn between stops according to `patronages`
+/// etc, etc
 pub fn visualise_one(
-    patronages: BTreeMap<(i32, i32), i32>,
-    stop_sequence: Vec<i64>,
-    stop_names: BTreeMap<i64, String>,
-    service_count: i32,
+    patronages: &BTreeMap<(StopId, StopId), Quantity>,
+    stop_sequence: &Vec<StopId>,
+    stop_names: &BTreeMap<StopId, String>,
+    service_count: Quantity,
     route_name: &str,
     direction: &str,
     ftime: &Option<String>,
@@ -141,12 +148,12 @@ pub fn visualise_one(
     swap_colours: bool,
     jumble_colours: bool,
     css_path: &Option<PathBuf>,
-) -> std::io::Result<String> {
+) -> Result<String> {
     // we need to sum boardings and alightings for each stop_id so we know how wide to make arcs
-    let (boardings, alightings) = sum_up(&patronages);
+    let (boardings, alightings) = sum_up(patronages);
 
     // and now we know what the ultimate sequence number of everything is...
-    let mut seqi: BTreeMap<i64, usize> = BTreeMap::new();
+    let mut seqi: BTreeMap<StopId, usize> = BTreeMap::new();
     for (i, k) in stop_sequence.iter().enumerate() {
         seqi.insert(*k, i);
     }
@@ -212,17 +219,14 @@ pub fn visualise_one(
 
             let tostr = to.to_string();
             let to_name = stop_names.get(&to).unwrap_or(&tostr);
-            let quantity = *patronages.get(&(from as i32, to as i32)).unwrap_or(&0);
+            let quantity = *patronages.get(&(from, to)).unwrap_or(&0);
             if quantity < 1 {
                 continue;
             }
             // can just sum this all up for the wraparounds
             current_load += quantity;
 
-            let alt_txt = format!(
-                "from: {}\nto: {}\npassengers: {}",
-                from_name, to_name, quantity
-            );
+            let alt_txt = format!("from: {}\nto: {}\npassengers: {}", from_name, to_name, quantity);
 
             let y1 = main_height;
             let y2 = y1;
@@ -230,11 +234,13 @@ pub fn visualise_one(
 
             // need to figure out arcs in/out of the page, and have two of them - "wrap around"
             // these need to be two-arc paths!
-            let tst = dest_subtotals[to_idx];
-            let ost = orig_subtotals[from_idx];
+            let to_dest = dest_subtotals[to_idx];
+            let from_orig = orig_subtotals[from_idx];
 
-            let x1_right = (EXTRA + from_idx as f64 * BETWEEN) + (ost + width / 2.0) + SPACE / 50.0;
-            let x2_left = (EXTRA + to_idx as f64 * BETWEEN) - (width / 2.0 + tst + SPACE / 50.0);
+            let x1_right =
+                (EXTRA + from_idx as f64 * BETWEEN) + (from_orig + width / 2.0) + SPACE / 50.0;
+            let x2_left =
+                (EXTRA + to_idx as f64 * BETWEEN) - (width / 2.0 + to_dest + SPACE / 50.0);
             let x2_right = x2_left + (stop_count as f64 * BETWEEN);
             let x1_left = x1_right - (stop_count as f64 * BETWEEN);
 
@@ -273,7 +279,7 @@ pub fn visualise_one(
         let fromstr = from.to_string();
         let from_name = stop_names.get(&from).unwrap_or(&fromstr);
 
-        let orig_total = SPACE * f64::from(*boardings.get(&(from as i32)).unwrap_or(&0)) / tots_max;
+        let orig_total = SPACE * f64::from(*boardings.get(&from).unwrap_or(&0)) / tots_max;
 
         // we're going outside-in here so the wraparound subtotals aren't relevant to us
         // and due to how we iterate, we only need the scalar here
@@ -283,15 +289,12 @@ pub fn visualise_one(
             let to = stop_sequence[to_idx];
             let tostr = to.to_string();
             let to_name = stop_names.get(&to).unwrap_or(&tostr);
-            let quantity = *patronages.get(&(from as i32, to as i32)).unwrap_or(&0);
+            let quantity = *patronages.get(&(from, to)).unwrap_or(&0);
             if quantity == 0 {
                 continue;
             }
 
-            let alt_txt = format!(
-                "from: {}\nto: {}\npassengers: {}",
-                from_name, to_name, quantity
-            );
+            let alt_txt = format!("from: {}\nto: {}\npassengers: {}", from_name, to_name, quantity);
 
             // now we need to construct our path coordinates
             let y1 = main_height;
@@ -325,8 +328,8 @@ pub fn visualise_one(
             orig_subtotal += width;
         }
 
-        let alights = *alightings.get(&(from as i32)).unwrap_or(&0);
-        let boards = *boardings.get(&(from as i32)).unwrap_or(&0);
+        let alights = *alightings.get(&from).unwrap_or(&0);
+        let boards = *boardings.get(&from).unwrap_or(&0);
 
         // label things
         let line2 = format!("{} alightings | {} boardings", alights, boards);
@@ -361,10 +364,11 @@ pub fn visualise_one(
         );
         bargraph.push_str(&bar);
 
-        let loopy = match from_idx + 1 == stop_count {
+        let loopy = if from_idx + 1 == stop_count {
             // anticlockwise open circle arrow
-            true => "&#8634; ",
-            false => "",
+            "&#8634; "
+        } else {
+            ""
         };
 
         for t_c in &["keyline", "foreground"] {
@@ -388,12 +392,12 @@ pub fn visualise_one(
         midline.push_str(&circ);
     }
 
-    let ftime_ins = match ftime {
+    let ftime_ins = match ftime.as_ref() {
         Some(s) => format!("; {}", s),
         None => String::new(),
     };
 
-    let boards_count: i32 = boardings.values().sum();
+    let boards_count: Quantity = boardings.values().sum();
     let title = format!(
         r#"<text class="title" x="{}" y="100">{} {} – {} {}</text>
     <text class="subtitle" x="{}" y="150">{} boardings; est. {} services{}</text>"#, // {} services TODO
