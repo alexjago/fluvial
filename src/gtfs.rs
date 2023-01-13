@@ -558,21 +558,25 @@ fn topo_merge(mut input: VecDeque<VecDeque<StopId>>) -> Result<Vec<StopId>> {
 fn gc_distance(from_lat: f64, from_lon: f64, to_lat: f64, to_lon: f64) -> f64 {
     //! Calculate the great-circle distance between two points on Earth.
     //! Takes coordinates in decimal degrees.
+    #![allow(clippy::shadow_reuse)]
 
     let r = 6_371_000.0; // approximate average radius of Earth
 
-    // radian conversion
-    let from_lat = from_lat * std::f64::consts::PI / 180.0;
-    let from_lon = from_lon * std::f64::consts::PI / 180.0;
-    let to_lat = to_lat * std::f64::consts::PI / 180.0;
-    let to_lon = to_lon * std::f64::consts::PI / 180.0;
+    let from_lat = from_lat.to_radians();
+    let from_lon = from_lon.to_radians();
+    let to_lat = to_lat.to_radians();
+    let to_lon = to_lon.to_radians();
 
     // Inverse Haversine formula
     2.0 * r
-        * ((((to_lat - from_lat) / 2.0).sin().powi(2)
-            + from_lat.cos() * to_lat.cos() * (((to_lon - from_lon) / 2.0).sin().powi(2)))
-        .sqrt()
-        .asin())
+        * (((to_lat - from_lat) / 2.0)
+            .sin()
+            .mul_add(
+                ((to_lat - from_lat) / 2.0).sin(),
+                from_lat.cos() * to_lat.cos() * (((to_lon - from_lon) / 2.0).sin().powi(2)),
+            )
+            .sqrt()
+            .asin())
 }
 
 pub fn get_stop_names(

@@ -30,7 +30,7 @@ fn colour_list(count: usize) -> Vec<String> {
     for k in 0..count {
         let hue = 360.0 * (k as f64) / (count as f64);
         let sat_var: f64 = rng.gen();
-        let sat = 90.0 + 10.0 * sat_var;
+        let sat = 10.0f64.mul_add(sat_var, 90.0);
         let val = match k % 4 {
             1 => 50.0,
             3 => 60.0,
@@ -183,7 +183,7 @@ pub fn visualise_one(
     let mut midline = format!(
         r#"<line class="mainline" x1="{}" x2="{}" y1="{}" y2="{}" />"#,
         EXTRA,
-        EXTRA + (stop_count as f64 - 1.0) * BETWEEN,
+        (stop_count as f64 - 1.0).mul_add(BETWEEN, EXTRA),
         main_height,
         main_height
     );
@@ -238,10 +238,10 @@ pub fn visualise_one(
             let from_orig = orig_subtotals[from_idx];
 
             let x1_right =
-                (EXTRA + from_idx as f64 * BETWEEN) + (from_orig + width / 2.0) + SPACE / 50.0;
+                (from_idx as f64).mul_add(BETWEEN, EXTRA) + (from_orig + width / 2.0) + SPACE / 50.0;
             let x2_left =
-                (EXTRA + to_idx as f64 * BETWEEN) - (width / 2.0 + to_dest + SPACE / 50.0);
-            let x2_right = x2_left + (stop_count as f64 * BETWEEN);
+                (to_idx as f64).mul_add(BETWEEN, EXTRA) - (width / 2.0 + to_dest + SPACE / 50.0);
+            let x2_right = (stop_count as f64).mul_add(BETWEEN, x2_left);
             let x1_left = x1_right - (stop_count as f64 * BETWEEN);
 
             let path = format!(
@@ -303,10 +303,10 @@ pub fn visualise_one(
 
             let dst = dest_subtotals[to_idx];
 
-            let x1 = (EXTRA + from_idx as f64 * BETWEEN)
+            let x1 = (from_idx as f64).mul_add(BETWEEN, EXTRA)
                 + (orig_total - (orig_subtotal + width / 2.0))
                 + SPACE / 50.0;
-            let x2 = (EXTRA + to_idx as f64 * BETWEEN) - (width / 2.0 + dst + SPACE / 50.0);
+            let x2 = (to_idx as f64).mul_add(BETWEEN, EXTRA) - (width / 2.0 + dst + SPACE / 50.0);
 
             let path = format!(
                 r#"<path class="arc f{} t{}" d="m{:.5} {} v{} A1 1 0 1 1 {:.5} {} v{}" stroke-width="{:.5}"><title>{}</title></path>
@@ -333,7 +333,7 @@ pub fn visualise_one(
 
         // label things
         let line2 = format!("{} alightings | {} boardings", alights, boards);
-        let t_x = EXTRA + (from_idx as f64 * BETWEEN) - SPACE / 8.0;
+        let t_x = (from_idx as f64).mul_add(BETWEEN, EXTRA) - SPACE / 8.0;
         let t_y = main_height + SPACE / 2.0;
         let t_y2 = t_y + SPACE / 2.0;
 
@@ -354,7 +354,7 @@ pub fn visualise_one(
         current_load -= alights;
         current_load += boards;
 
-        let b_x = EXTRA + (from_idx as f64) * BETWEEN + BETWEEN / 2.0;
+        let b_x = (from_idx as f64).mul_add(BETWEEN, EXTRA) + BETWEEN / 2.0;
         let b_y1 = doc_height;
         let b_y2 = doc_height - ((SPACE * f64::from(current_load)) / tots_max);
 
@@ -386,7 +386,7 @@ pub fn visualise_one(
         // circle markers
         let circ = format!(
             r#"<circle class="markers" cx="{}" cy="{}" r="12.5" />"#,
-            (EXTRA + from_idx as f64 * BETWEEN),
+            (from_idx as f64).mul_add(BETWEEN, EXTRA),
             main_height
         );
         midline.push_str(&circ);
@@ -398,6 +398,7 @@ pub fn visualise_one(
     };
 
     let boards_count: Quantity = boardings.values().sum();
+    #[allow(clippy::non_ascii_literal)]
     let title = format!(
         r#"<text class="title" x="{}" y="100">{} {} – {} {}</text>
     <text class="subtitle" x="{}" y="150">{} boardings; est. {} services{}</text>"#, // {} services TODO

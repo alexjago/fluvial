@@ -1,0 +1,29 @@
+route_name,direction,lookup_route,lookup_direction,route_short_name,stop_sequence,weighting
+Beenleigh line,Inbound,Rail,Rail,VLBR,1,0
+Beenleigh line,Inbound,Rail,Rail,BNBR,2,1
+Beenleigh line,Inbound,Rail,Rail,CLBR,24,0
+Beenleigh line,Inbound,Rail,Rail,SPBR,29,0
+Beenleigh line,Inbound,Rail,Rail,IPBR,30,0
+Beenleigh line,Inbound,Rail,Rail,RWBR,31,0
+Beenleigh line,Inbound,Rail,Rail,FGBR,35,0
+Beenleigh line,Inbound,Rail,Rail,DBBR,37,0
+Beenleigh line,Inbound,Rail,Rail,BDBR,38,0
+Beenleigh line,Inbound,Rail,Rail,SHBR,39,0
+Beenleigh line,Inbound,Rail,Rail,RPBR,40,0
+Beenleigh line,Inbound,Rail,Rail,CABR,41,0
+Beenleigh line,Inbound,Rail,Rail,NABR,42,0
+Beenleigh line,Inbound,Rail,Rail,GYBR,43,0
+Ferny Grove line,Inbound,Rail,Rail,FGBR,1,1
+Ferny Grove line,Inbound,Rail,Rail,VLBR,26,0
+Ferny Grove line,Inbound,Rail,Rail,BNBR,25,0
+Ferny Grove line,Inbound,Rail,Rail,CLBR,27,0
+Ferny Grove line,Inbound,Rail,Rail,SPBR,29,0
+Ferny Grove line,Inbound,Rail,Rail,IPBR,30,0
+Ferny Grove line,Inbound,Rail,Rail,RWBR,31,0
+Ferny Grove line,Inbound,Rail,Rail,DBBR,14,0
+Ferny Grove line,Inbound,Rail,Rail,BDBR,15,0
+Ferny Grove line,Inbound,Rail,Rail,SHBR,16,0
+Ferny Grove line,Inbound,Rail,Rail,RPBR,17,0
+Ferny Grove line,Inbound,Rail,Rail,CABR,18,0
+Ferny Grove line,Inbound,Rail,Rail,NABR,19,0
+Ferny Grove line,Inbound,Rail,Rail,GYBR,20,0

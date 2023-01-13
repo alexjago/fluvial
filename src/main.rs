@@ -3,37 +3,49 @@
 //! A bit like a Sankey diagram, only a little simpler.
 //! Intended for visualising passenger flows over a route.
 
-// TODO: refactor with proper errors / logging`
-
 // LINTS
 #![warn(clippy::all)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::style)]
-// The spicy one
-// #![warn(clippy::restriction)]
-// restriction allows
+/*
+// Every so often, uncomment this block
+#![warn(clippy::restriction)]
+// restriction lints considered and allowed
 #![allow(clippy::implicit_return)]
 #![allow(clippy::float_arithmetic)]
 #![allow(clippy::integer_arithmetic)]
 #![allow(clippy::integer_division)]
 #![allow(clippy::indexing_slicing)]
 #![allow(clippy::default_numeric_fallback)]
-// restriction warns
+#![allow(clippy::separated_literal_suffix)]
+#![allow(clippy::as_conversions)]
+*/
+// restriction lints considered and adopted
 #![warn(clippy::unwrap_used)]
 #![warn(clippy::expect_used)]
 #![warn(clippy::missing_docs_in_private_items)]
+// TODO: switch to a real logging crate then disallow:
+// #![allow(clippy::print_stdout)]
+// #![allow(clippy::print_stderr)]
+// #![allow(clippy::use_debug)] // For logging Paths & PathBufs, mostly
 // pedantic allows
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::cast_precision_loss)]
+// more questionable lints
+#![warn(clippy::nursery)]
+#![warn(clippy::cargo)]
 
 extern crate ansi_escapes;
 extern crate hsluv;
-extern crate structopt;
 
 use anyhow::{anyhow, bail, Context, Result};
+use clap::Parser;
+use clap_verbosity_flag::Verbosity;
 use gtfs::Quantity;
+use indicatif::ProgressIterator;
+use log::{debug, error, info, trace, warn};
 use rusqlite::{named_params, Connection};
-use structopt::StructOpt;
+use simple_logger::SimpleLogger;
 use tempfile::{NamedTempFile, TempDir};
 use ureq::Agent;
 
@@ -53,49 +65,52 @@ use std::fs::File;
 /// A (route, direction) pair
 type RouteDir = (String, String);
 
+/// The options struct for the CLI.
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, StructOpt)]
-#[structopt(setting = structopt::clap::AppSettings::ColoredHelp)]
-#[structopt(about)]
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
 struct Opts {
     /// Colour by destination instead of by origin
-    #[structopt(short = "s", long = "swap-colours")]
+    #[arg(short = 's', long = "swap-colours")]
     swap: bool,
     /// Colour neighbours differently rather than similarly
-    #[structopt(short = "j", long = "jumble-colours")]
+    #[arg(short = 'j', long = "jumble-colours")]
     jumble: bool,
     /// List all route/direction pairs and exit
-    #[structopt(short = "l", long = "list")]
+    #[arg(short = 'l', long = "list")]
     list: bool,
     /// Print license information and acknowledgements and exit
-    #[structopt(short = "L", long = "license")]
+    #[arg(short = 'L', long = "license")]
     license: bool,
-    /// Tell me more
-    #[structopt(short = "v", long = "verbose")]
-    verbose: bool,
+    /// Tell me more (or less)
+    #[clap(flatten)]
+    verbose: Verbosity<clap_verbosity_flag::InfoLevel>,
     /// Get all utility scripts at https://github.com/alexjago/fluvial/tree/master/utils
-    #[structopt(short = "U", long = "utilities")]
+    #[arg(short = 'U', long = "utilities")]
     utilities: bool,
-    #[structopt(long = "ftime")]
+    #[arg(long = "ftime")]
     /// Filter patronage by time of day (by matching in the `time` column)
     ftime: Option<String>,
-    #[structopt(
+    #[arg(
     value_names(&["route", "direction"]),
-    short = "o", long = "one",
+    short = 'o', long = "one",
     )]
     /// Generate visualisation for only one route/direction combination
     one: Vec<String>,
-    #[structopt(short = "c", long = "css", value_names(&["path"]))]
+    #[arg(short = 'c', long = "css", value_names(&["path"]))]
     /// Path to a custom CSS file for the SVGs
     css: Option<PathBuf>,
-    #[structopt(short = "b", long = "batch", conflicts_with = "license")]
+    #[arg(short = 'b', long = "batch", conflicts_with = "license")]
     /// Treat in_file as a batch CSV of <patronage zip URL>, <gtfs zip URL>; conflicts with --gtfs
     batch: bool,
     /// A directory/URI of GTFS files to determine stop names and sequences from
-    #[structopt(short = "g", long = "gtfs", value_names(&["path"]), required_unless_one = &["batch", "license", "utilities"], conflicts_with = "batch")]
+    #[arg(short = 'g', long = "gtfs", value_names(&["path"]), required_unless_present_any = &["batch", "license", "positions", "utilities"], conflicts_with_all = ["batch", "positions"])]
     gtfs_dir: Option<PathBuf>,
+    /// A positions file to determine stop names and sequences from. Currently does nothing.
+    #[arg(short = 'p', long = "positions", value_names(&["path"]), required_unless_present_any = &["batch", "license", "gtfs_dir", "utilities"], conflicts_with_all = ["batch", "gtfs_dir"])]
+    positions: Option<PathBuf>,
     /// The path/URI of the patronage CSV (or path to batch file, with --batch)
-    // #[structopt(required_unless_one = &["license", "utilities"])]
+    // #[arg(required_unless_one = &["license", "utilities"])]
     in_file: Option<PathBuf>,
     /// Where to put the output SVGs
     out_dir: Option<PathBuf>,
@@ -206,11 +221,13 @@ fn get_month_year(db: &Connection) -> rusqlite::Result<(String, String)> {
 }
 
 fn main() -> Result<()> {
-    let opts = Opts::from_args();
+    // Parse CLI
+    let opts = Opts::parse();
 
-    if opts.verbose {
-        eprintln!("{:#?}", opts);
-    }
+    // Initialise logging
+    SimpleLogger::new().with_level(opts.verbose.log_level_filter()).init()?;
+
+    trace!("{:#?}", opts);
 
     if opts.license {
         println!("Fluvial, a transit patronage visualiser.");
@@ -230,7 +247,6 @@ fn main() -> Result<()> {
     }
 
     if opts.batch {
-        // TODO:
         // if path is "-" then it's std input
         // thanks /u/burntsushi
         // https://www.reddit.com/r/rust/comments/jv3q3e/how_to_select_between_reading_from_a_file_and/gci1mww/
@@ -245,11 +261,9 @@ fn main() -> Result<()> {
         let mut rdr = csv::ReaderBuilder::new().has_headers(false).from_reader(batch_stream);
 
         for r in rdr.records().filter_map(std::result::Result::ok) {
-            let patronage_uri = PathBuf::from(r.get(0).context("Missing patronage URI!")?);
-            let gtfs_uri = PathBuf::from(r.get(1).context("Missing GTFS URI!")?);
-
+            let patronage_uri = PathBuf::from(r.get(0).context("No patronage URI!")?);
+            let gtfs_uri = PathBuf::from(r.get(1).context("No GTFS URI!")?);
             if let Err(e) = single_month(
-                opts.verbose,
                 &Some(patronage_uri),
                 opts.list,
                 &Some(gtfs_uri),
@@ -260,13 +274,12 @@ fn main() -> Result<()> {
                 opts.jumble,
                 &opts.css,
             ) {
-                eprintln!("Skipping this month: {e}");
+                error!("Skipping this month: {e}");
             }
         }
     } else {
-        // no downloads or anything, just go
+        // No CSV to iterate over or anything like that, just go
         single_month(
-            opts.verbose,
             &opts.in_file,
             opts.list,
             &opts.gtfs_dir,
@@ -285,7 +298,6 @@ fn main() -> Result<()> {
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_lines)]
 fn single_month(
-    verbose: bool,
     in_file: &Option<PathBuf>,
     list: bool,
     gtfs_dir: &Option<PathBuf>,
@@ -297,18 +309,12 @@ fn single_month(
     css: &Option<PathBuf>,
 ) -> Result<()> {
     //! Run a single month's worth of processing.
-    let now = std::time::Instant::now();
-
-    if verbose {
-        eprintln!("Loading databases...");
-    }
-
     let db = Connection::open_in_memory().context("Could not open virtual database")?;
     rusqlite::vtab::csvtab::load_module(&db)
         .context("Could not load CSV module of virtual database")?;
     // Sign up for 512 MB of mmap if we can
     if let Err(e) = db.pragma_update(None, "mmap_size", 1 << 29) {
-        eprintln!("Warn: mmap unsuccessful; performance may be degraded.\n{e}",);
+        warn!("mmap unsuccessful; performance may be degraded.\n{e}",);
     }
 
     let dl_agent = ureq::AgentBuilder::new()
@@ -316,12 +322,10 @@ fn single_month(
         .tls_connector(std::sync::Arc::new(native_tls::TlsConnector::new()?))
         .build();
 
-    let pre_patronage_load_time = std::time::Instant::now();
-
     let pat_tmpfile = {
         if let Some(x) = in_file.as_ref().filter(|p| !p.exists()) {
             // Patronage CSV doesn't exist on disk, so let's try to download it
-            Some(download_patronage(&dl_agent, x, verbose)?)
+            Some(download_patronage(&dl_agent, x)?)
         } else {
             // Patronage CSV exists on disk, no need to download it
             None
@@ -335,12 +339,7 @@ fn single_month(
 
     load_patronage(&db, &infilename, pat_tmpfile)?;
 
-    if verbose {
-        eprintln!(
-            "Loaded patronage CSV in {}s (possibly after downloading)",
-            pre_patronage_load_time.elapsed().as_secs()
-        );
-    }
+    debug!("Loaded patronage CSV");
 
     if list {
         match list_routes(&db) {
@@ -356,15 +355,15 @@ fn single_month(
         // other info-like options potentially after --list
 
         // Download GTFS if it doesn't exist
-        if verbose && gtfs_dir.is_some() {
-            eprintln!("Loading GTFS. This may take several seconds...");
+        if gtfs_dir.is_some() {
+            debug!("Loading GTFS. This may take several seconds...");
         }
 
         // for lifetime reasons, we get a tempdir this way...
         let gtfs_tempdir: Option<TempDir> = {
             if let Some(x) = gtfs_dir.as_ref().filter(|x| !(x.exists())) {
                 Some(
-                    download_gtfs(&dl_agent, x, verbose)
+                    download_gtfs(&dl_agent, x)
                         .context("Didn't download a (GTFS) zip file. Skipping this month.")?,
                 )
             } else {
@@ -379,19 +378,17 @@ fn single_month(
 
         match load_gtfs(&db, gtfs_actual_dir) {
             Ok(_) => {
-                if verbose {
-                    eprintln!(
-                        "Info: successfully loaded GTFS data as a database in {} seconds.\n\n",
-                        now.elapsed().as_millis() as f32 / 1000.0
-                    );
-                }
+                info!("Successfully loaded GTFS data as a database.",);
             }
             Err(e) => {
-                bail!("Failed to load GTFS from disk; skipping this month. {:?}", e);
+                return Err(anyhow!(e)).context("Failed to load GTFS from disk.");
             }
         }
 
+        // TODO: load positions file into db?
+
         // Output Directory
+        #[allow(clippy::shadow_reuse)]
         let out_dir = match out_dir.as_ref() {
             Some(o) => o.clone(),
             None => std::env::current_dir()?,
@@ -409,27 +406,20 @@ fn single_month(
         } else {
             rd_seq = list_routes(&db).context("Failed to list routes")?;
         }
+        // TODO: take input from positions file here?
 
         //eprintln!("rds: {:?}", rds);
-        let mut completed = 0usize;
-        let mut skipped = 0usize;
+        let mut completed = 0_usize;
+        let mut skipped = 0_usize;
         let total = rd_seq.len();
 
-        // if !verbose {
-        //     eprint!("{}", ansi_escapes::CursorPrevLine)
-        // }
+        for (route, direction) in rd_seq.iter().progress() {
+            trace!("{} {}", route, direction);
 
-        eprintln!("0 routes done; 0 skipped (not in GTFS); {} total in patronage CSV", total);
+            let patronages =
+                make_one(&db, route, direction, ftime).context("Error collating stop patronage")?;
 
-        for (route, direction) in rd_seq {
-            if verbose {
-                eprintln!("{} {}", route, direction);
-            }
-
-            let patronages = make_one(&db, &route, &direction, ftime)
-                .context("Error collating stop patronage")?;
-
-            let stop_seq: Vec<StopId> = match make_stop_sequence(&db, &route, &direction) {
+            let stop_seq: Vec<StopId> = match make_stop_sequence(&db, route, direction) {
                 Ok(o) => o,
                 Err(e) => {
                     if one.len() == 2 {
@@ -438,30 +428,26 @@ fn single_month(
                             route, direction, e
                         );
                     }
-                    if verbose {
-                        eprintln!(
-                            "{} {} {} not in GTFS; skipping",
-                            ansi_escapes::CursorPrevLine,
-                            route,
-                            direction
-                        );
-                    }
+                    trace!("{} {} not in GTFS; skipping", route, direction);
+
                     skipped += 1;
                     continue;
                 }
             };
 
             let stop_names = get_stop_names(&db, &stop_seq)?;
+            // TODO: take info from positions file here?
 
-            let service_count = get_service_count(&db, &route, &direction, &month, &year)?;
+            let service_count = get_service_count(&db, route, direction, &month, &year)?;
+            // TODO: take info from positions file here? How?
 
             let out = visualise_one(
                 &patronages,
                 &stop_seq,
                 &stop_names,
                 service_count,
-                &route,
-                &direction,
+                route,
+                direction,
                 ftime,
                 convert_monthname(&month),
                 &year,
@@ -486,16 +472,6 @@ fn single_month(
             rd_tree.entry(route.clone()).or_insert_with(Vec::new).push(direction.clone());
 
             completed += 1;
-
-            if !verbose {
-                eprintln!(
-                    "{}{} routes done; {} skipped (not in GTFS); {} total in patronage CSV",
-                    ansi_escapes::CursorPrevLine,
-                    completed,
-                    skipped,
-                    total
-                );
-            }
         }
 
         // Write index.html if not a --one
@@ -503,48 +479,36 @@ fn single_month(
             write_index_html(&rd_tree, &out_dir, &month, &year, ftime)?;
         }
 
-        if verbose {
-            eprintln!(
-                "Finished everything in {} seconds!",
-                now.elapsed().as_millis() as f32 / 1000.0
-            );
-        } else {
-            eprintln!(
-                "{}{} routes done; {} skipped (not in GTFS); {} total in patronage CSV; completed in {} seconds.",
-                ansi_escapes::CursorPrevLine,
-                completed,
-                skipped,
-                total,
-                now.elapsed().as_millis() as f32 / 1000.0
-            );
-        }
+        info!(
+            "{} routes completed; {} skipped (not in GTFS); {} total in patronage CSV",
+            completed, skipped, total,
+        );
+
         Ok(())
     }
 }
 
-fn download_patronage(dl_agent: &Agent, in_file: &PathBuf, verbose: bool) -> Result<NamedTempFile> {
+fn download_patronage(dl_agent: &Agent, in_file: &PathBuf) -> Result<NamedTempFile> {
     //! Attempt to download patronage data to a temporary file
-    eprintln!("Downloading {:#?}", in_file);
+    info!("Downloading {:#?}", in_file);
     let mut pat_tmpfile = NamedTempFile::new().context("Error creating temporary file")?;
     let resp = dl_agent
         .get(in_file.to_str().context("utf-8 conversion error")?)
         .call()
         .context("Could not find or download patronage data")?;
-    if verbose {
-        eprintln!(
-            "\t{:#?}\n\t{}{} {}",
-            resp.get_url(),
-            resp.status(),
-            resp.status_text(),
-            resp.http_version(),
-        );
-        for v in resp.headers_names() {
-            if let Some(h) = resp.header(&v) {
-                eprintln!("\t{v} {h}");
-            }
+    debug!(
+        "\t{:#?}\n\t{}{} {}",
+        resp.get_url(),
+        resp.status(),
+        resp.status_text(),
+        resp.http_version(),
+    );
+    for v in resp.headers_names() {
+        if let Some(h) = resp.header(&v) {
+            trace!("\t{v} {h}");
         }
-        eprintln!();
     }
+    debug!("");
 
     let mut bytes: Vec<u8> = Vec::new();
     resp.into_reader().read_to_end(&mut bytes)?;
@@ -558,9 +522,9 @@ fn download_patronage(dl_agent: &Agent, in_file: &PathBuf, verbose: bool) -> Res
             let mut f = zippy.by_index(i).context("Error unzipping")?;
             if f.enclosed_name()
                 .and_then(Path::extension)
-                .map_or_else(|| false, |f| f.eq_ignore_ascii_case("csv"))
+                .map_or_else(|| false, |p| p.eq_ignore_ascii_case("csv"))
             {
-                eprintln!("{}Extracting: {}", ansi_escapes::CursorPrevLine, f.name());
+                trace!("Extracting: {}", f.name());
                 std::io::copy(&mut f, &mut pat_tmpfile).context("Error storing Patronage CSV")?;
                 break;
             }
@@ -574,13 +538,11 @@ fn download_patronage(dl_agent: &Agent, in_file: &PathBuf, verbose: bool) -> Res
     Ok(pat_tmpfile)
 }
 
-fn download_gtfs(dl_agent: &Agent, gtfs_dir: &PathBuf, verbose: bool) -> Result<TempDir> {
+fn download_gtfs(dl_agent: &Agent, gtfs_dir: &PathBuf) -> Result<TempDir> {
     //! Attempt download of GTFS data.
 
     // gotta download the thing
-    // if verbose {
-    eprintln!("Downloading {:#?}", gtfs_dir);
-    // }
+    info!("Downloading {:#?}", gtfs_dir);
     let gtfs_tmpdir = tempfile::tempdir()?;
     let mut tmp_path = gtfs_tmpdir.path().to_path_buf();
 
@@ -589,18 +551,16 @@ fn download_gtfs(dl_agent: &Agent, gtfs_dir: &PathBuf, verbose: bool) -> Result<
         .call()
         .context("Could not find or download patronage data")?;
 
-    if verbose {
-        eprintln!(
-            "\t{:#?}\n\t{}{} {}",
-            resp.get_url(),
-            resp.status(),
-            resp.status_text(),
-            resp.http_version(),
-        );
-        for v in resp.headers_names() {
-            if let Some(h) = resp.header(&v) {
-                eprintln!("\t{v} {h}");
-            }
+    debug!(
+        "\t{:#?}\n\t{}{} {}",
+        resp.get_url(),
+        resp.status(),
+        resp.status_text(),
+        resp.http_version(),
+    );
+    for v in resp.headers_names() {
+        if let Some(h) = resp.header(&v) {
+            trace!("\t{v} {h}");
         }
     }
 
@@ -614,6 +574,7 @@ fn download_gtfs(dl_agent: &Agent, gtfs_dir: &PathBuf, verbose: bool) -> Result<
         for i in 0..zippy.len() {
             let mut zfile = zippy.by_index(i).context("Error reading GTFS ZIP")?;
             tmp_path.push(zfile.name());
+            trace!("Extracting GTFS to {:#?}", tmp_path);
             let mut actual = File::create(&tmp_path).context("Error saving GTFS file")?;
             std::io::copy(&mut zfile, &mut actual).context("Error extracting from GTFS ZIP")?;
             tmp_path.pop();
@@ -631,6 +592,7 @@ fn load_patronage(
 ) -> Result<()> {
     //! Load patronage data into the database from CSV
 
+    #![allow(clippy::shadow_unrelated)]
     // lack of spaces around = is necessary
     let schema = format!(
         "CREATE VIRTUAL TABLE PInit USING csv(filename='{}', header=YES)",
@@ -655,7 +617,7 @@ fn load_patronage(
                     .persist("./error.csv")
                     .context("Error also while attempting to persist CSV for inspection.")
                 {
-                    // TODO combine with DB execution error too?
+                    // TODO does this combine with DB execution error too?
                     bail!(anyhow!(e).context(b));
                 }
                 return Err(e).context("Refer to ./error.csv for more info.");
@@ -668,10 +630,7 @@ fn load_patronage(
     if let Err(e) =
         db.execute_batch("CREATE INDEX idx_patronage_routedir on Patronage(route, direction);")
     {
-        eprintln!(
-            "Warning: error creating index on patronage database; performance may be degraded\n{}",
-            e
-        );
+        warn!("Could not create index on patronage database; performance may be degraded\n{}", e);
     }
     Ok(())
 }

@@ -3,20 +3,20 @@ name = "fluvial"
 version = "0.3.4"
 authors = ["Alex Jago"]
 edition = "2021"
-rust-version = "1.56"
 license = "GPL-3.0-or-later"
 description = "Visualise stop-by-stop passenger patronage over routes."
 repository = "https://github.com/alexjago/fluvial"
+keywords = ["transit", "visualisation", "gtfs"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rand = "0.8.4"
+rand = "0.8.5"
 rust-hsluv = "0.1.4"
-clap = "2.33.3"
-serde_rusqlite = "0.28.0"
+clap = { version = "4", features = ["derive"] }
+clap-verbosity-flag = "2"
+serde_rusqlite = "0.31"
 serde_derive = "1.0.130"
 serde = { version = "1.0.130", features = ["derive"] }
-structopt = "0.3.23"
 ansi-escapes = "0.1.1"
 csv = "1.1.6"
 tempfile = "3.2.0"
@@ -28,13 +28,15 @@ ureq = { version = "2.5.0", default-features = false, features = [
 ] }
 native-tls = "0.2.11"
 anyhow = "1.0.66"
+simple_logger = "4.0.0"
+indicatif = { version = "0.17.1" }
 
 [dependencies.rusqlite]
-version = "0.26.0"
+version = "0.28.0"
 features = ["bundled", "csvtab"]
 
 [dependencies.zip]
-version = "0.5.13"
+version = "0.6"
 default-features = false
 features = ["deflate"]
 # we aren't using the 'time' feature anyway and cargo-audit says that dependency is insecure

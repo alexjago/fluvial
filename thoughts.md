@@ -17,9 +17,21 @@ We'd also like to support parent station clumping. This is probably representabl
 
 Supporting station clumping also lets us handle journeys to/from other lines, albeit in a clumsy way - just assign all stop_ids to the same stop_sequence number and name it "to|from XYZ Line". 
 
-In further support of these goals there should be a way to mark a stop as boardings-only or alightings-only. This avoids counting e.g. Bowen Hills boardings as part of inbound Ferny Grove line patronage.
+We also need to deal with parallel or express lines. For example, the Gold Coast line is an express overlay on the Beenleigh line. Altandi, Loganlea and Beenleigh stations are the express stops and we should expect passengers to preferentially catch the train between those stations on the express service. Alternatively, the Ipswich and Springfield lines presently run alternating-combined from Darra to Northgate; we expect passengers between stations there to catch whatever shows up first. Similarly on the CBD lines.
 
-So we have the following columns: 
+We can deal with the parallel-lines case by allocating a station _weighting_ and then passenger trips between stations with a reduced weighting account for parallel services.
+We take the _higher_ weighting of the pair of stations. Examples:
+
+* Darra & Graceville both have a weighting of 0.5 for the Ipswich & Springfield lines; trips between those stations are split half-and-half between the lines. However, Bundamba is only on the Ipswich line so it is weighted 1. Trips between Bundamba & Darra are weighted at 1.
+* Loganlea, Altandi and Beenleigh are on both the Gold Coast and Beenleigh lines with the Gold Coast as an express overlay. These stations are weighted 0 for the Beenleigh line but 1 for the Gold Coast line. Other Beenleigh-only stations are weighted 1, so trips from those to an express station are counted at full value for the Beenleigh line, but trips between the express stations are counted at full value for the Gold Coast line.
+* Trips which are downweighted to zero value should probably be _depicted_ with some sort of dashed line and text ("Up to X trips; all allocated to another line)
+* Similarly trips which are downweighted to a non-zero value should have text noting the total number of trips and the weighting. 
+
+CAVEAT: zero-for-express-overlay doesn't really work once you consider combined stations. Consider trips from Loganlea to Central. Since Central presumably has a partial weighting on the Beenleigh line, those trips are counted at that partial weighting even when Loganlea is zero-weighted. Also, the concept of allocating people exclusively to the expresses is questionable. Perhaps higher than half-and-half, but not all-and-nothing.
+
+CAVEAT #2: referring to combined sections of other lines as a pseudo-entry. Workaround: consider the combined section separately.
+
+So we have the following columns:
 
 * stop id (corresponds to origin_stop or destination_stop)
 * stop name
@@ -28,4 +40,20 @@ So we have the following columns:
 * nominal direction (corresponds to direction)
 * actual route
 * actual direction
-* Stop usage: board-only=1;  alight-only=2; both=0
+* weighting
+
+We could also potentially have stop IDs be the trailing field (in a CSV) and have arbitrarily many of them:
+
+* Display route name
+* Display route direction
+* Display name
+* Lookup route name
+* Lookup route direction
+* Stop sequence (NOT unique)
+* Weighting
+* Stop IDs (one or more columns)
+
+OK yes you could, but then you need to figure out a way to deal with the variadic last column rather than just importing the thing into SQLite.
+
+So, just have a single stop ID, duplicate stop sequencing (sum grouped by everything but stop id itself) and then we have something that fits the shape of a database table
+
