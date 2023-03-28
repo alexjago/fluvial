@@ -33,9 +33,10 @@ WITH
             (SELECT DISTINCT route_short_name FROM Configuration)
     ),
     LineStopParents AS (
-    SELECT DISTINCT
+    SELECT
         SelectedRoutes.route_short_name,
-        Stops.parent_station
+        Stops.parent_station,
+        max(cast(StopTimes.stop_sequence as int)) as est_seq
     FROM
         Stops,
         SelectedRoutes,
@@ -46,6 +47,13 @@ WITH
         SelectedRoutes.route_id = Trips.route_id
         and Trips.trip_id = StopTimes.trip_id
         and StopTimes.stop_id = Stops.stop_id
+        and Stops.stop_id >= 600000
+    GROUP BY
+        SelectedRoutes.route_short_name,
+        Stops.parent_station
+    ORDER BY
+        SelectedRoutes.route_short_name,
+        est_seq
     ),
     ParentNames AS (
         SELECT DISTINCT
@@ -58,25 +66,46 @@ WITH
 SELECT DISTINCT
     LineStopParents.route_short_name,
     ParentNames.stop_name,
-    Stops.stop_id
+    Stops.stop_id,
+    LineStopParents.est_seq
 FROM
     Stops, LineStopParents, ParentNames
 WHERE
     LineStopParents.parent_station = ParentNames.parent_station
     and LineStopParents.parent_station = Stops.parent_station
 ORDER BY 
-    LineStopParents.route_short_name
+    LineStopParents.route_short_name, est_seq
 ;
 
 .headers on
+
+-- The main event
+-- First set up a helper view (SelectedLines) to list stop_ids in the target lines
+-- Then also set further restrictions 
+-- >= 600000 is just because SEQ train station stops are all that
+-- then also (a) either take the target line
+-- or (b) take the *first* other line
 
 WITH
 SelectedLines (route_name, direction, route_short_name, stop_id) AS 
 (SELECT distinct Configuration.route_name, Configuration.direction, Configuration.route_short_name, LineStations.stop_id 
     FROM Configuration, LineStations 
     WHERE LineStations.route_short_name IS Configuration.route_short_name and Configuration.weighting = 1
-    ORDER BY Configuration.route_name, Configuration.direction)
-SELECT DISTINCT C.route_name, C.direction, L.stop_name, C.lookup_route, C.lookup_direction, C.stop_sequence, C.weighting, L.stop_id, L.route_short_name
+    ORDER BY Configuration.route_name, Configuration.direction)--,
+-- Fudge AS 
+-- (select distinct S.route_name, S.direction, S.route_short_name, est_seq, count(stop_sequence) as stop_seqs
+--     from SelectedLines S 
+--         inner join LineStations L 
+--         on S.route_short_name = L.route_short_name  
+--         inner join Configuration C 
+--         on S.route_name = C.route_name and S.direction = C.direction and S.route_short_name = C.route_short_name
+--     HAVING est_seq > cast(stop_sequence as int)
+-- )
+SELECT DISTINCT C.route_name, C.direction, L.stop_name, C.lookup_route, C.lookup_direction, C.stop_sequence, C.weighting, L.stop_id, L.route_short_name, 
+    CASE C.weighting
+        WHEN 1 THEN C.stop_sequence + L.est_seq - 1
+        ELSE C.stop_sequence 
+    END as est_seq
 FROM Configuration C, LineStations L
 WHERE C.route_short_name IS L.route_short_name 
     AND CAST(L.stop_id AS INT) >= 600000
@@ -90,7 +119,9 @@ WHERE C.route_short_name IS L.route_short_name
                     AND G.stop_sequence < C.stop_sequence
             ))
         )
-ORDER BY C.route_name, C.direction, C.stop_sequence
+ORDER BY C.route_name, C.direction, C.stop_sequence, L.est_seq
 ;
 
--- TODO: some way to not have duplicate segments?
+-- remaining todo for inserts maths
+-- count the number of inserts that are greater than the selected line's base 
+-- and are <= est_seq; add that

@@ -134,7 +134,12 @@ pub fn load_gtfs(db: &Connection, gtfs_dir: &Path) -> Result<(), rusqlite::Error
     // Experiment: if we can create the table with a primary key in the first place, maybe we can save a scan later?
     // Result: No. Faster to populate the table and create the index after. No FKs either.
     //      (It does take up way more memory though.)
-    db.execute_batch("CREATE TABLE StopTimes (trip_id TEXT, stop_id INT, stop_sequence INT);")?;
+    // Experiment: OK, but what about if we use a WITHOUT ROWID table?
+    // Result: solid 2 seconds slower there overall
+    db.execute_batch(
+        "CREATE TABLE StopTimes 
+        (trip_id TEXT, stop_id INT, stop_sequence INT);",
+    )?;
     db.execute_batch(
         "INSERT INTO StopTimes (trip_id, stop_id, stop_sequence)
     SELECT trip_id, stop_id, stop_sequence FROM StopTimes_VIRT;",
